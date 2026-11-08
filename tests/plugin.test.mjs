@@ -195,6 +195,18 @@ test('syncOnce publishes the derived state and copies new inbox files into the a
   assert.equal(Object.keys(world.written).length, 1, 'a seen file is not copied again')
 })
 
+test('syncOnce treats an isError "not found" answer as a tool the server does not offer', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  world.$.mcp.call = async (server, tool) =>
+    tool === 'list_subscription_plans'
+      ? { isError: true, content: [{ type: 'text', text: 'MCP error -32602: Tool list_subscription_plans not found' }] }
+      : { content: [{ type: 'text', text: JSON.stringify(toolAnswers[tool] ?? {}) }] }
+  await syncOnce(world.$, { now: NOW })
+  assert.equal(world.state.value.sync.ok, true)
+  assert.deepEqual(world.state.value.sync.unavailable, ['list_subscription_plans'])
+  assert.equal(world.state.value.summary.plansNote, 'Not offered by this PayPal connection')
+})
+
 test('syncOnce without a connection publishes the error and keeps the lists', async () => {
   const world = fakeDollar({ answers: toolAnswers, connected: false })
   world.state.value = { invoices: [{ number: 'kept' }] }

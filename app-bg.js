@@ -92,7 +92,9 @@ async function readList($, tool, args, errors, unavailable = []) {
     const result = await $.mcp.call(SERVER, tool, args)
     const value = resultJson(result)
     if (result && result.isError) {
-      errors[tool] = typeof value === 'string' ? value : JSON.stringify(value)
+      const message = typeof value === 'string' ? value : JSON.stringify(value)
+      if (isToolMissing(message)) unavailable.push(tool)
+      else errors[tool] = message
       return []
     }
     return value
