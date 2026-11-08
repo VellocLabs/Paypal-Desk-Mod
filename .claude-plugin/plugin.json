@@ -24,7 +24,7 @@
       "launcher": "hidden",
       "app": {
         "seed": "./app",
-        "seedVersion": 1,
+        "seedVersion": 2,
         "data": "data/state.json",
         "background": {
           "module": "./app-bg.js",

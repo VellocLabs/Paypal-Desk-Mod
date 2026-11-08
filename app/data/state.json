@@ -1,24 +1,78 @@
 {
-  "summary": {
-    "period": "Waiting for the first sync",
-    "sales": "—",
-    "salesDelta": "",
-    "salesTrend": "flat",
-    "refunds": "—",
-    "refundRate": "",
-    "overdueCount": "—",
-    "overdueAmount": "",
-    "disputeCount": "—",
-    "disputeDue": "",
-    "casesNote": "Cases appear after the first sync",
-    "invoicesNote": "",
-    "disputesNote": "",
-    "plansNote": ""
+  "week": {
+    "range": "Waiting for the first sync",
+    "kpis": {
+      "net": {
+        "label": "Net",
+        "value": "—",
+        "trendValue": "",
+        "trend": "flat"
+      },
+      "orders": {
+        "label": "Count",
+        "value": "—",
+        "trendValue": "",
+        "trend": "flat"
+      },
+      "aov": {
+        "label": "AOV",
+        "value": "—",
+        "trendValue": "",
+        "trend": "flat"
+      },
+      "refunds": {
+        "label": "Rate",
+        "value": "—",
+        "trendValue": "",
+        "trend": "flat"
+      }
+    },
+    "byCountry": [],
+    "daily": [],
+    "topProducts": [],
+    "latest": []
   },
-  "series": { "daily": [] },
+  "month": {
+    "range": "Waiting for the first sync",
+    "kpis": {
+      "net": {
+        "label": "Net",
+        "value": "—",
+        "trendValue": "",
+        "trend": "flat"
+      },
+      "orders": {
+        "label": "Count",
+        "value": "—",
+        "trendValue": "",
+        "trend": "flat"
+      },
+      "aov": {
+        "label": "AOV",
+        "value": "—",
+        "trendValue": "",
+        "trend": "flat"
+      },
+      "refunds": {
+        "label": "Rate",
+        "value": "—",
+        "trendValue": "",
+        "trend": "flat"
+      }
+    },
+    "byCountry": [],
+    "productCountry": [],
+    "products": []
+  },
+  "salesNote": "",
+  "summary": {
+    "casesNote": "Cases appear after the first sync",
+    "disputesNote": ""
+  },
   "cases": [],
-  "invoices": [],
   "disputes": [],
-  "plans": [],
-  "sync": { "ok": false, "note": "Connecting to PayPal…" }
+  "sync": {
+    "ok": false,
+    "note": "Connecting to PayPal…"
+  }
 }

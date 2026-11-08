@@ -5,12 +5,20 @@ dashboard the person sees, `data/state.json` is what the background module
 publishes from PayPal every few minutes, and `inbox/` holds invoice requests
 the module copied in from the person's inbox folder.
 
+The dashboard opens on the store's last 7 days (net sales, orders, average
+order value and refunds against the 7 days before, sales by country, daily
+sales, top products, latest orders); *Last 30 days* has the totals by
+country, by product and by product and country. The store's orders are the
+invoices whose memo starts with `paypal-desk demo`; the memo carries the
+buyer's country and the products, which the invoice list does not return.
+Speak of them as orders and sales, not as invoices.
+
 ## What you do
 
 - **Work a case.** When the person presses *Work this case*, the action
   arrives with `id`, `kind` and `ref`. Read the matching row in
   `data/state.json`, then gather the facts with the PayPal tools (`get_dispute`,
-  `get_invoice`, `list_transactions`, `show_subscription_details`) before you
+  `get_invoice`, `list_transactions`) before you
   say anything. Explain the situation in three or four sentences, give one
   recommendation, and name the exact tool call you would make. Then make it.
   Every call that changes the account opens a confirmation; the person decides
@@ -47,10 +55,20 @@ the module copied in from the person's inbox folder.
 
 | Path | Holds |
 | --- | --- |
-| `summary.*` | Formatted figures: `sales`, `salesDelta`, `salesTrend`, `refunds`, `refundRate`, `overdueCount`, `overdueAmount`, `disputeCount`, `disputeDue`, `period`, notes |
-| `series.daily` | `{day, sales, refunds}` per day, last 30 days |
+| `week.range` | The 7-day window and the one it is compared with |
+| `week.kpis.{net,orders,aov,refunds}` | `{label, value, trendValue, trend}` for a `Metric`; `trend` is `up`, `down` or `flat` |
+| `week.byCountry`, `month.byCountry` | `{label, value, color}`: share of sales in %, US, CA, GB, AU, DE and Other |
+| `week.daily` | `{label, value}`: net sales per day in dollars, refunds taken off on the day they were made |
+| `week.topProducts` | `{product, units, sales}`, the five best sellers by sales |
+| `week.latest` | `{id, customer, country, items, total, status}`; `status` is `Paid`, `Refunded` or `Partly refunded` |
+| `month.range`, `month.kpis.*` | As for the week, totals only: `trendValue` holds a second figure, not a change |
+| `month.productCountry` | `{label, US, CA, GB, AU, DE, other}`: units of the ten best sellers by country group |
+| `month.products` | `{product, units, sales, US, CA, GB, AU, DE, other}` for every product sold |
+| `salesNote` | The line saying the store's orders are simulated sandbox data |
+| `summary.casesNote`, `summary.disputesNote` | The subtitles of the Cases and Disputes tabs |
 | `cases` | `{id, kind, title, detail, tone, label, since, ref}`; `kind` is `dispute`, `overdue_invoice`, `refund_spike`, `duplicate_payment` or `invoice_request` |
-| `invoices` | `{number, recipient, amount, status, due}`; `status` is `OVERDUE` when past due |
 | `disputes` | `{id, reason, amount, status, respondBy}` |
-| `plans` | `{id, name, status, product, created}` |
-| `sync` | `{at, ok, errors?, note}` |
+| `sync` | `{at, ok, errors?, unavailable?, note}` |
+
+Both windows end yesterday (UTC): today's orders appear in `week.latest`
+but in no total until tomorrow.

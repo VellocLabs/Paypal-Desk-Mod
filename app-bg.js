@@ -1,24 +1,43 @@
 /**
  * The PayPal Desk background module. One resident worker per Velloc: on a
- * timer it reads the merchant's invoices, disputes, plans and recent
- * transactions through the plugin's PayPal MCP server, derives the dashboard
- * state and the open cases, and copies invoice requests dropped into the
+ * timer it reads the merchant's invoices, disputes and recent transactions
+ * through the plugin's PayPal MCP server, keeps the store's orders (the
+ * invoices whose memo carries a store order) in its store, derives the sales
+ * board and the open cases, and copies invoice requests dropped into the
  * declared inbox folder into the app's folder for the session agent.
  *
  * Contract: the module only reads PayPal. Every write (a refund, a reminder,
  * an accepted claim) is the session agent's, and the session hook puts it
  * to the person first. State is the app's `/data`: it is kept small, since
- * the whole of it travels with every dashboard action.
+ * the whole of it travels with every dashboard action. It is published one
+ * top-level key per patch, so a day's rollover that changes every figure is
+ * still a handful of patches.
  */
+import { addDays, dateOf } from './lib/dates.mjs'
+import { readStoreRow, salesBoard } from './lib/sales.mjs'
 
 export const POLL_MS = 5 * 60_000
 export const SERVER = 'paypal'
 export const ROW_CAP = 50
 export const CASE_CAP = 30
-export const SERIES_DAYS = 30
+export const PAGE_SIZE = 100
+export const MAX_PAGES = 60
+/** Every invoice page is read again this often, so a refund or a deletion on an old invoice is seen. */
+export const FULL_SCAN_MS = 60 * 60_000
+/** Orders older than this many days are not kept. */
+export const KEEP_DAYS = 62
+const TRANSACTION_DAYS = 30
 const INBOX_EXTENSIONS = ['.csv', '.json', '.txt', '.md']
 const HANDLED_FILE = 'data/handled.json'
 const SEEN_KEY = 'inbox.seen'
+export const ORDERS_KEY = 'orders.cache'
+
+let pending = Promise.resolve()
+
+/** Resolves when the sync in flight, if any, has finished. For tests. */
+export function whenIdle() {
+  return pending
+}
 
 export function register(on) {
   let timer = null
@@ -38,8 +57,13 @@ export function register(on) {
         running = false
       }
     }
-    await tick()
-    timer = $.clock.every(POLL_MS, tick)
+    const run = () => {
+      pending = tick()
+      return pending
+    }
+    // The first full invoice read can outlast app.start's budget, so it is not awaited.
+    run()
+    timer = $.clock.every(POLL_MS, run)
   })
 
   on('app.stop', async () => {
@@ -54,7 +78,7 @@ export async function syncOnce($, { inbox, now }) {
   const connected = await $.mcp.connect(SERVER)
   if (!connected || connected.isConnected !== true) {
     const message = (connected && connected.message) || 'the PayPal server is not connected'
-    await $.app.state.set({
+    await publishState($, previous, {
       ...emptyState(previous),
       sync: { at: now, ok: false, error: message, note: `Not connected to PayPal: ${message}` },
     })
@@ -64,13 +88,12 @@ export async function syncOnce($, { inbox, now }) {
   const errors = {}
   const unavailable = []
   const read = (tool, args) => readList($, tool, args, errors, unavailable)
+  const scan = await scanInvoices($, { now, errors, unavailable })
   const raw = {
-    invoices: await read('list_invoices', { page: 1, page_size: ROW_CAP, total_required: true }),
     disputes: await read('list_disputes', { page_size: ROW_CAP }),
-    plans: await read('list_subscription_plans', { page: 1, page_size: ROW_CAP }),
     // Transaction Search wants ISO 8601 date-times with seconds; a date alone is a 400.
     transactions: await read('list_transactions', {
-      start_date: new Date(now - SERIES_DAYS * 86_400_000).toISOString(),
+      start_date: new Date(now - TRANSACTION_DAYS * 86_400_000).toISOString(),
       end_date: new Date(now).toISOString(),
       page_size: 500,
     }),
@@ -78,8 +101,81 @@ export async function syncOnce($, { inbox, now }) {
   const inboxFiles = inbox ? await pullInbox($, inbox) : []
   const handled = await readHandled($)
 
-  const next = deriveState({ previous, raw, inboxFiles, handled, errors, unavailable, now })
-  await $.app.state.set(next)
+  const next = deriveState({ previous, raw, orders: scan.orders, openInvoices: scan.openInvoices, inboxFiles, handled, errors, unavailable, now })
+  await publishState($, previous, next)
+}
+
+/** Publishes `next` as one patch per changed top-level key; `$.app.state.set` where there is no `publish`. */
+export async function publishState($, previous, next) {
+  if (typeof $.app.publish !== 'function') {
+    await $.app.state.set(next)
+    return
+  }
+  const before = previous || {}
+  const patches = []
+  for (const key of new Set([...Object.keys(before), ...Object.keys(next)])) {
+    const value = next[key]
+    if (JSON.stringify(value) === JSON.stringify(before[key])) continue
+    patches.push(value === undefined ? { path: `/${key}` } : { path: `/${key}`, value })
+  }
+  if (patches.length) await $.app.publish(patches)
+}
+
+/**
+ * Reads the invoice list into the cached store orders and open invoices.
+ * The list is newest-created first: a sync reads pages until one brings
+ * nothing new, and every FULL_SCAN_MS reads them all and drops what is gone.
+ */
+export async function scanInvoices($, { now, errors, unavailable = [] }) {
+  const stored = await $.store.get(ORDERS_KEY)
+  const cache = stored && typeof stored === 'object' ? stored : {}
+  const orders = cache.orders && typeof cache.orders === 'object' ? cache.orders : {}
+  const open = cache.open && typeof cache.open === 'object' ? cache.open : {}
+  const full = !(now - (cache.fullAt || 0) < FULL_SCAN_MS)
+  const cutoff = addDays(dateOf(now), -KEEP_DAYS)
+  const seen = new Set()
+  let changed = false
+  let complete = false
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const value = await readList($, 'list_invoices', { page, page_size: PAGE_SIZE, total_required: page === 1 }, errors, unavailable)
+    if (errors.list_invoices || unavailable.includes('list_invoices')) break
+    const items = listItems(value, ['items', 'invoices'])
+    let pageChanged = false
+    for (const row of items) {
+      if (!row.id) continue
+      seen.add(row.id)
+      const store = readStoreRow(row)
+      if (store) {
+        if (open[row.id]) { delete open[row.id]; pageChanged = true }
+        if (!store.order || store.order.date < cutoff) {
+          if (orders[row.id]) { delete orders[row.id]; pageChanged = true }
+        } else if (JSON.stringify(orders[row.id]) !== JSON.stringify(store.order)) {
+          orders[row.id] = store.order
+          pageChanged = true
+        }
+        continue
+      }
+      const [invoice] = normalizeInvoices([row], now)
+      if (invoice.outstanding) {
+        if (JSON.stringify(open[row.id]) !== JSON.stringify(row)) { open[row.id] = row; pageChanged = true }
+      } else if (open[row.id]) {
+        delete open[row.id]
+        pageChanged = true
+      }
+    }
+    changed = changed || pageChanged
+    if (items.length < PAGE_SIZE) { complete = true; break }
+    if (!full && !pageChanged) break
+  }
+  for (const [id, order] of Object.entries(orders)) {
+    if (order.date < cutoff || (full && complete && !seen.has(id))) { delete orders[id]; changed = true }
+  }
+  if (full && complete) {
+    for (const id of Object.keys(open)) if (!seen.has(id)) { delete open[id]; changed = true }
+  }
+  const fullAt = full && complete ? now : cache.fullAt || 0
+  if (changed || fullAt !== cache.fullAt) await $.store.set(ORDERS_KEY, { orders, open, fullAt })
+  return { orders: Object.values(orders), openInvoices: normalizeInvoices(Object.values(open), now) }
 }
 
 // ---- reading -------------------------------------------------------------
@@ -172,36 +268,27 @@ async function readHandled($) {
 
 // ---- deriving (pure) -------------------------------------------------------
 
-/** The dashboard state from the raw reads. Pure: no `$`, so tests can drive it. */
-export function deriveState({ previous = {}, raw = {}, inboxFiles = [], handled = [], errors = {}, unavailable = [], now }) {
-  const invoices = normalizeInvoices(raw.invoices, now)
+/** The dashboard state from the reads. Pure: no `$`, so tests can drive it. */
+export function deriveState({ previous = {}, raw = {}, orders = [], openInvoices = [], inboxFiles = [], handled = [], errors = {}, unavailable = [], now }) {
   const disputes = normalizeDisputes(raw.disputes)
-  const plans = normalizePlans(raw.plans)
   const transactions = normalizeTransactions(raw.transactions)
-  const series = dailySeries(transactions, now)
-  const summary = summarize({ invoices, disputes, transactions, series, now })
-  const cases = deriveCases({ invoices, disputes, transactions, series, inboxFiles, now })
+  const { refundShare, ...board } = salesBoard(orders, { today: dateOf(now) })
+  const cases = deriveCases({ invoices: openInvoices, disputes, transactions, refundShare, inboxFiles, now })
     .filter(c => !handled.includes(c.id))
     .sort((a, b) => toneRank(b.tone) - toneRank(a.tone) || kindRank(b.kind) - kindRank(a.kind) || a.since - b.since)
     .slice(0, CASE_CAP)
   const errorNames = Object.keys(errors)
-  const plansOffered = !unavailable.includes('list_subscription_plans')
   const noteParts = [`Synced ${timeOfDay(now)}`]
   if (errorNames.length) noteParts.push(`${errorNames.length} read(s) failed: ${errorNames.join(', ')}`)
   if (unavailable.length) noteParts.push(`not offered by this server: ${unavailable.join(', ')}`)
   return {
+    ...board,
     summary: {
-      ...summary,
       casesNote: cases.length === 0 ? 'Nothing needs a decision right now' : `${cases.length} open, most urgent first`,
-      invoicesNote: `${invoices.length} most recent`,
       disputesNote: disputes.length === 0 ? 'No disputes' : `${disputes.filter(d => d.open).length} open of ${disputes.length}`,
-      plansNote: plansOffered ? `${plans.length} plans` : 'Not offered by this PayPal connection',
     },
-    series: { daily: series },
     cases,
-    invoices: invoices.slice(0, ROW_CAP).map(viewInvoice),
     disputes: disputes.slice(0, ROW_CAP).map(viewDispute),
-    plans: plans.slice(0, ROW_CAP),
     sync: {
       at: now,
       ok: errorNames.length === 0,
@@ -215,12 +302,12 @@ export function deriveState({ previous = {}, raw = {}, inboxFiles = [], handled 
 
 function emptyState(previous) {
   return {
+    week: previous.week,
+    month: previous.month,
+    salesNote: previous.salesNote,
     summary: previous.summary || {},
-    series: previous.series || { daily: [] },
     cases: previous.cases || [],
-    invoices: previous.invoices || [],
     disputes: previous.disputes || [],
-    plans: previous.plans || [],
   }
 }
 
@@ -271,17 +358,6 @@ export function normalizeDisputes(value) {
   })
 }
 
-export function normalizePlans(value) {
-  const items = listItems(value, ['plans', 'items'])
-  return items.map(p => ({
-    id: p.id || '',
-    name: p.name || '',
-    status: String(p.status || '').toUpperCase(),
-    product: p.product_id || '',
-    created: (p.create_time || '').slice(0, 10),
-  }))
-}
-
 export function normalizeTransactions(value) {
   const items = listItems(value, ['transaction_details', 'transactions', 'items'])
   return items.map(t => {
@@ -301,53 +377,8 @@ export function normalizeTransactions(value) {
   })
 }
 
-/** One row per day over the window: completed sales and refunds, in account currency units. */
-export function dailySeries(transactions, now) {
-  const days = []
-  const byDay = new Map()
-  for (let i = SERIES_DAYS - 1; i >= 0; i--) {
-    const day = isoDate(now - i * 86_400_000).slice(5)
-    const row = { day, sales: 0, refunds: 0 }
-    days.push(row)
-    byDay.set(day, row)
-  }
-  for (const t of transactions) {
-    const day = String(t.at || '').slice(5, 10)
-    const row = byDay.get(day)
-    if (!row) continue
-    if (t.refund || t.value < 0) row.refunds = round2(row.refunds + Math.abs(t.value))
-    else if (t.status === 'S' || t.status === 'COMPLETED' || t.status === '') row.sales = round2(row.sales + t.value)
-  }
-  return days
-}
-
-export function summarize({ invoices, disputes, transactions, series, now }) {
-  const sales = series.reduce((sum, r) => sum + r.sales, 0)
-  const refunds = series.reduce((sum, r) => sum + r.refunds, 0)
-  const half = Math.floor(series.length / 2)
-  const recent = series.slice(half).reduce((s, r) => s + r.sales, 0)
-  const earlier = series.slice(0, half).reduce((s, r) => s + r.sales, 0)
-  const delta = earlier > 0 ? Math.round(((recent - earlier) / earlier) * 100) : 0
-  const overdue = invoices.filter(i => i.overdueDays > 0)
-  const openDisputes = disputes.filter(d => d.open)
-  const soonest = openDisputes.map(d => d.respondBy).filter(Boolean).sort()[0]
-  const currency = (transactions[0] && transactions[0].currency) || (invoices[0] && invoices[0].currency) || 'USD'
-  return {
-    period: `Last ${SERIES_DAYS} days · ${isoDate(now)}`,
-    sales: money({ value: sales, currency_code: currency }),
-    salesDelta: earlier > 0 ? `${delta >= 0 ? '+' : ''}${delta}%` : '',
-    salesTrend: delta > 2 ? 'up' : delta < -2 ? 'down' : 'flat',
-    refunds: money({ value: refunds, currency_code: currency }),
-    refundRate: sales > 0 ? `${Math.round((refunds / sales) * 100)}% of sales` : 'No sales in the window',
-    overdueCount: String(overdue.length),
-    overdueAmount: overdue.length ? money({ value: overdue.reduce((s, i) => s + i.value, 0), currency_code: currency }) + ' outstanding' : 'All invoices on time',
-    disputeCount: String(openDisputes.length),
-    disputeDue: soonest ? `Next response due ${soonest.slice(0, 10)}` : 'No response pending',
-  }
-}
-
 /** The cases: what needs a person's decision, each with a stable id the agent can mark handled. */
-export function deriveCases({ invoices, disputes, transactions, series, inboxFiles, now }) {
+export function deriveCases({ invoices, disputes, transactions, refundShare = 0, inboxFiles, now }) {
   const cases = []
   for (const d of disputes) {
     if (!d.open) continue
@@ -377,15 +408,12 @@ export function deriveCases({ invoices, disputes, transactions, series, inboxFil
       ref: inv.id,
     })
   }
-  const week = series.slice(-7)
-  const weekSales = week.reduce((s, r) => s + r.sales, 0)
-  const weekRefunds = week.reduce((s, r) => s + r.refunds, 0)
-  if (weekSales > 0 && weekRefunds / weekSales > 0.2) {
+  if (refundShare > 0.2) {
     cases.push({
-      id: `refunds:${isoDate(now).slice(0, 7)}`,
+      id: `refunds:${dateOf(now).slice(0, 7)}`,
       kind: 'refund_spike',
       title: 'Refunds are high this week',
-      detail: `${Math.round((weekRefunds / weekSales) * 100)}% of the last 7 days' sales were refunded. Worth finding the product or customer behind it.`,
+      detail: `${Math.round(refundShare * 100)}% of the last 7 days' sales were refunded. Worth finding the product or customer behind it.`,
       tone: 'warning',
       label: 'Trend',
       since: now,
@@ -437,16 +465,6 @@ export function duplicatePayments(transactions) {
 
 // ---- views and helpers -----------------------------------------------------
 
-function viewInvoice(inv) {
-  return {
-    number: inv.number,
-    recipient: inv.recipient,
-    amount: inv.amount,
-    status: inv.overdueDays > 0 ? 'OVERDUE' : inv.status,
-    due: inv.due.slice(0, 10),
-  }
-}
-
 function viewDispute(d) {
   return {
     id: d.id,
@@ -488,14 +506,6 @@ function kindRank(kind) {
     case 'refund_spike': return 2
     default: return 1
   }
-}
-
-function round2(n) {
-  return Math.round(n * 100) / 100
-}
-
-function isoDate(ms) {
-  return new Date(ms).toISOString().slice(0, 10)
 }
 
 function timeOfDay(ms) {

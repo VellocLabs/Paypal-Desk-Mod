@@ -3,8 +3,8 @@
 A resident desk for PayPal merchants, built as a plugin for
 [Velloc](https://velloc.app), an AI coding agent in the same family as the
 terminal and IDE coding agents. Install the plugin and your PayPal account
-is watched in the background: sales, refunds, overdue invoices and open
-disputes as live figures, each thing that needs a decision as a case, and an
+is watched in the background: your store's sales by day, country and
+product, refunds, overdue invoices and open disputes as live figures, each thing that needs a decision as a case, and an
 agent that works the case with PayPal's own tools and asks you before it
 changes anything.
 
@@ -14,8 +14,8 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
 
 ```
  PayPal MCP server ──▶ background module (resident, every 5 min)
- (sandbox, OAuth)      │ reads invoices, disputes, plans, transactions
-                       │ derives figures, series and cases
+ (sandbox, OAuth)      │ reads invoices, disputes, transactions
+                       │ derives the sales board and the cases
                        ▼
                  app state  ──▶ dashboard (live, partial re-render)
                        ▲              │ "Work this case"
@@ -28,9 +28,17 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
 
 - **Background module** (`app-bg.js`): one worker that lives as long as
   Velloc runs, with or without the dashboard open. It only reads PayPal.
-- **Dashboard** (`app/app.a2ui`): Overview, Cases, Invoices, Disputes, Plans.
-  The agent can reshape it on request ("show refunds by week") by editing
-  the file and rebuilding.
+- **Dashboard** (`app/app.a2ui`): *Last 7 days* opens first: net sales,
+  orders, average order value and refunds against the week before, sales by
+  country, daily sales, top products and the latest orders. *Last 30 days*
+  has the totals by country, by product and by product and country. Then
+  Cases and Disputes. The agent can reshape it on request ("show refunds by
+  week") by editing the file and rebuilding.
+- **Store orders**: an order is an invoice whose memo starts with
+  `paypal-desk demo` and carries the buyer's country and the products
+  (`lib/memo.mjs`), since PayPal's invoice list returns neither. The module
+  keeps 62 days of them in its store, reads only the newest pages on each
+  sync and every page once an hour (`lib/sales.mjs` does the figures).
 - **Cases**: open disputes with their response deadline, overdue invoices,
   a refund spike, two payments that look like one, a new request file in
   the inbox folder.
@@ -72,7 +80,20 @@ PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed
 ```
 
 The script creates four sent invoices (two overdue), a product and a
-monthly plan. For a dispute: send money from your sandbox personal account
+monthly plan.
+
+The store's order history is a second script: 2,500 orders of a 33-product
+accessories store from Oct 1 to Nov 7, each recorded as a paid invoice on its
+own date (a few refunded), newest day first. It takes about an hour and can
+be stopped and run again; `--dry-run` prints the plan and calls nothing.
+
+```bash
+PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:orders
+PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:orders -- --from 2026-11-08 --to 2026-11-10
+```
+
+The dashboard's windows end yesterday, so before a demo add the days since
+the last run with `--from`/`--to`. For a dispute: send money from your sandbox personal account
 to the business account, copy the transaction id, and run
 `npm run seed -- --chargeback <id>`; the sandbox-only chargeback endpoint
 opens a dispute on it. Transaction Search shows new payments only after a
@@ -80,8 +101,8 @@ few hours, so seed early.
 
 ## Try it
 
-- Open the desk. Overview shows the figures; Cases lists the overdue
-  invoices and the dispute.
+- Open the desk. *Last 7 days* shows the week's sales; Cases lists the
+  overdue invoices and the dispute.
 - Press *Work this case* on the dispute. The agent reads it with
   `get_dispute`, explains it, recommends, and calls a tool. The confirmation
   dialog names the call; allow or refuse there.
@@ -96,11 +117,13 @@ few hours, so seed early.
 .claude-plugin/plugin.json      the manifest: the app, its background module, the inbox folder
 .mcp.json                       PayPal's sandbox MCP server (OAuth, no stored secret)
 app-bg.js                       the background module
+lib/                            the catalog, the order memo, dates, the sales board
 app/                            the seed: app.a2ui, AGENTS.md, data/state.json
 hooks/guard.js                  the confirmation gate on PayPal writes
 skills/paypal-rules/SKILL.md    operating rules and the tool map
 templates/board/template.md     the app's session: tools, MCP scoped to this plugin, skills
-scripts/seed-sandbox.mjs        sandbox seeding
+scripts/seed-sandbox.mjs        sandbox seeding: invoices, a plan
+scripts/seed-orders.mjs         sandbox seeding: the store's order history
 tests/                          node tests (npm test)
 ```
 
@@ -111,8 +134,9 @@ npm test
 ```
 
 Node 22 or later. The tests cover the manifest, the guard's decisions, the
-state derived from PayPal's reads, inbox copying and the module's lifecycle
-against a stand-in runtime.
+sales board, the order generator, the state derived from PayPal's reads, the
+invoice paging and cache, inbox copying and the module's lifecycle against a
+stand-in runtime.
 
 ## License
 

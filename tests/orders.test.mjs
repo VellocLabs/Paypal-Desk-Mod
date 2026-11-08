@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { CATALOG, COUNTRIES } from '../scripts/lib/catalog.mjs'
+import { CATALOG, COUNTRIES } from '../lib/catalog.mjs'
 import {
   addDays, dayCounts, dayRange, defaultTotal, generateOrders, invoiceBody, makeOrder, orderMemo,
   parseOrderMemo, paymentBody, refundBody, seedingQueue, summarizeOrders,
