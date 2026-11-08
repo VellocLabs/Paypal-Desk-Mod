@@ -10,7 +10,8 @@ order value and refunds against the 7 days before, sales by country, daily
 sales, top products, latest orders); *Last 30 days* has the totals by
 country, by product and by product and country. The store's orders are the
 invoices whose memo starts with `paypal-desk demo`; the memo carries the
-buyer's country and the products, which the invoice list does not return.
+buyer's country, the products and any refund, which the invoice list does
+not return.
 Speak of them as orders and sales, not as invoices.
 
 ## What you do
@@ -68,7 +69,7 @@ Speak of them as orders and sales, not as invoices.
 | `summary.casesNote`, `summary.disputesNote` | The subtitles of the Cases and Disputes tabs |
 | `cases` | `{id, kind, title, detail, tone, label, since, ref}`; `kind` is `dispute`, `overdue_invoice`, `refund_spike`, `duplicate_payment` or `invoice_request` |
 | `disputes` | `{id, reason, amount, status, respondBy}` |
-| `sync` | `{at, ok, errors?, unavailable?, note}` |
+| `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |
 
 Both windows end yesterday (UTC): today's orders appear in `week.latest`
 but in no total until tomorrow.

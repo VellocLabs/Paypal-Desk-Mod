@@ -2,7 +2,9 @@
 /**
  * Seeds the sandbox business account with the demo store's order history:
  * each order becomes an invoice dated on its order day, sent without email,
- * marked paid that day, and for a few orders refunded a few days later.
+ * marked paid that day. A refunded order carries its refund (date and
+ * amount) in the memo only: PayPal's MCP server refuses an invoice-list
+ * page that holds a refunded invoice, so no refund is recorded on PayPal.
  * Needs PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET of a sandbox REST app in
  * the environment. Progress is kept in .seed/journal.json, so an interrupted
  * run picks up where it stopped.
@@ -25,7 +27,7 @@ import { fileURLToPath } from 'node:url'
 import { CALENDAR, CATALOG } from '../lib/catalog.mjs'
 import {
   DEFAULT_FROM, DEFAULT_REFUND_RATE, DEFAULT_TO, dayRange, generateOrders, invoiceBody, isDate,
-  paymentBody, refundBody, seedingQueue, summarizeOrders,
+  paymentBody, seedingQueue, summarizeOrders,
 } from './lib/orders.mjs'
 import { ApiError, createClient } from './lib/rest.mjs'
 
@@ -54,7 +56,7 @@ if (args['dry-run']) {
   console.log('\nFirst order, as sent:')
   console.log(JSON.stringify({ invoice: invoiceBody(orders[0]), payment: paymentBody(orders[0], method) }, null, 2))
   const refunded = orders.find(o => o.refund)
-  if (refunded) console.log(`\nA refund (${refunded.number}):`, JSON.stringify(refundBody(refunded, method)))
+  if (refunded) console.log(`\nA refunded order's memo (${refunded.number}):`, invoiceBody(refunded).detail.memo)
   process.exit(0)
 }
 
@@ -98,7 +100,7 @@ async function worker() {
       settle(order, true)
       streak = 0
       if (verbose || done % 25 === 0) {
-        const tag = order.refund ? ` refunded ${(order.refund.cents / 100).toFixed(2)} on ${order.refund.date}` : ''
+        const tag = order.refund ? ` (memo: refunded ${(order.refund.cents / 100).toFixed(2)} on ${order.refund.date})` : ''
         const perMin = done / Math.max(1 / 60, (Date.now() - started) / 60_000)
         const eta = Math.ceil((orders.length - done - failed) / perMin)
         console.log(`  ${order.number} ${order.country} $${(order.totalCents / 100).toFixed(2)} paid${tag}  (${done}/${orders.length}, ~${eta} min left)`)
@@ -144,11 +146,6 @@ async function seedOrder(order) {
     entry.paid = true
     saveJournal()
   }
-  if (order.refund && !entry.refunded) {
-    await client.request('POST', `/v2/invoicing/invoices/${entry.id}/refunds`, refundBody(order, method))
-    entry.refunded = true
-    saveJournal()
-  }
 }
 
 async function adoptExisting(order, entry) {
@@ -159,12 +156,11 @@ async function adoptExisting(order, entry) {
   entry.id = invoice.id
   entry.sent = status !== 'DRAFT'
   entry.paid = /PAID|REFUND/.test(status)
-  entry.refunded = /REFUND/.test(status)
 }
 
 async function probe() {
   const seeded = orders.filter(o => journal[o.number]?.id)
-  const picks = [['first seeded invoice', seeded[0]], ['first refunded invoice', seeded.find(o => o.refund)]]
+  const picks = [['first seeded invoice', seeded[0]], ['first order with a refund in its memo', seeded.find(o => o.refund)]]
   try {
     for (const [label, order] of picks) {
       if (!order) continue
@@ -201,7 +197,7 @@ function printPlan(p) {
   const top = Object.entries(p.bySku).sort((a, b) => b[1] - a[1]).slice(0, 5)
     .map(([sku, cents]) => `${names[sku]} $${Math.round(cents / 100)}`).join('; ')
   console.log(`Plan: ${p.orders} orders over ${days} day(s), ${from} … ${to}`)
-  console.log(`  revenue $${(p.revenueCents / 100).toFixed(2)}, AOV $${(p.aovCents / 100).toFixed(2)}, ${p.refunds} refund(s)`)
+  console.log(`  revenue $${(p.revenueCents / 100).toFixed(2)}, AOV $${(p.aovCents / 100).toFixed(2)}, ${p.refunds} refund(s) in memos`)
   console.log(`  countries: ${countries}`)
   console.log(`  products used: ${Object.keys(p.bySku).length}/${CATALOG.length}; top: ${top}`)
   const events = CALENDAR.filter(e => e.from <= to && e.to >= from && e.from > '0000-01-01')

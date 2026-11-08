@@ -9,6 +9,7 @@
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "seed": "node scripts/seed-sandbox.mjs",
-    "seed:orders": "node scripts/seed-orders.mjs"
+    "seed:orders": "node scripts/seed-orders.mjs",
+    "undo-refunds": "node scripts/undo-refunds.mjs"
   }
 }

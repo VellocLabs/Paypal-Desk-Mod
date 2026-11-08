@@ -1,7 +1,6 @@
 /**
  * Deterministic demo orders for the sandbox store, and the PayPal Invoicing
- * request bodies that record each one as a paid (and sometimes refunded)
- * sale on its own date. Each order's content is seeded from its number, so a
+ * request bodies that record each one as a paid sale on its own date. Each order's content is seeded from its number, so a
  * resumed run regenerates exactly the same orders.
  *
  * Contract: amounts are integer cents internally and two-decimal USD strings
@@ -211,10 +210,6 @@ export function paymentBody(order, method = 'PAYPAL') {
   return { method, payment_date: order.date, amount: usd(order.totalCents) }
 }
 
-export function refundBody(order, method = 'PAYPAL') {
-  return { method, refund_date: order.refund.date, amount: usd(order.refund.cents) }
-}
-
 /** Order count, AOV, country and product shares, refunds — for a dry run and the tests. */
 export function summarizeOrders(orders) {
   const byCountry = {}
@@ -234,6 +229,6 @@ export function summarizeOrders(orders) {
     byCountry,
     bySku,
     refunds,
-    requests: orders.length * 3 + refunds,
+    requests: orders.length * 3,
   }
 }

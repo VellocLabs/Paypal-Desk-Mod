@@ -23,10 +23,11 @@ test('only an invoice with a store memo is a store order, and only a paid one co
   )
 })
 
-test('a refund is read from the memo only when the status says refunded, and never exceeds the order', () => {
+test('a refund is read from the memo of a paid order, a bare refund status is a full one, and none exceeds the order', () => {
   const planned = { date: '2026-11-08', cents: 1200 }
-  assert.equal(order({ date: '2026-11-05', value: '24.00', lines: [['CAB-C2C', 2]], refund: planned }).refund, null)
+  assert.deepEqual(order({ date: '2026-11-05', value: '24.00', lines: [['CAB-C2C', 2]], refund: planned }).refund, { date: '2026-11-08', cents: 1200 })
   assert.deepEqual(order({ date: '2026-11-05', value: '24.00', lines: [['CAB-C2C', 2]], refund: planned, status: 'MARKED_AS_REFUNDED' }).refund, { date: '2026-11-08', cents: 1200 })
+  assert.equal(order({ date: '2026-11-05', value: '24.00' }).refund, null)
   assert.deepEqual(order({ date: '2026-11-05', value: '24.00', status: 'MARKED_AS_REFUNDED' }).refund, { date: '2026-11-05', cents: 2400 })
   assert.deepEqual(order({ date: '2026-11-05', value: '10.00', refund: { date: '2026-11-06', cents: 9900 }, status: 'REFUNDED' }).refund, { date: '2026-11-06', cents: 1000 })
 })

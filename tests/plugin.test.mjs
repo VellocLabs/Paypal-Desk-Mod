@@ -10,8 +10,8 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { describeCall, isWriteTool, register as registerGuard } from '../hooks/guard.js'
 import {
-  FULL_SCAN_MS, KEEP_DAYS, ORDERS_KEY, PAGE_SIZE, deriveState, duplicatePayments, isToolMissing, normalizeInvoices, publishState,
-  resultJson, syncOnce, whenIdle, register as registerBackground,
+  FULL_SCAN_MS, KEEP_DAYS, MAX_PAGE_NUMBER, ORDERS_KEY, PAGE_SIZE, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
+  normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
 } from '../app-bg.js'
 import { readStoreRow } from '../lib/sales.mjs'
 import { storeRow } from './fixtures.mjs'
@@ -163,9 +163,16 @@ function manyRows(count) {
   return Array.from({ length: count }, (_, i) => storeRow({ date: day(-1 - (i % 20)).slice(0, 10), value: '12.00' }))
 }
 
-/** The invoice list as pages of PAGE_SIZE over `rows`. */
-function pagesOf(rows) {
-  return ({ page = 1, page_size: size = PAGE_SIZE }) => ({ items: rows.slice((page - 1) * size, page * size) })
+/** The invoice list as pages over `rows`; a page holding a row in `refused` is refused as PayPal's server refuses it. */
+function pagesOf(rows, refused = new Set()) {
+  return ({ page = 1, page_size: size = PAGE_SIZE }) => {
+    const items = rows.slice((page - 1) * size, page * size)
+    const bad = items.findIndex(r => refused.has(r.id))
+    if (bad >= 0) {
+      return { __error: `MCP error -32602: Output validation error: Invalid structured content for tool list_invoices: Invalid enum value. Expected 'DRAFT' | 'SENT' | 'PAID', received 'MARKED_AS_REFUNDED' at invoices[${bad}].status` }
+    }
+    return { items }
+  }
 }
 
 /** A stand-in `$` for the module: records calls, answers from `answers` by tool name (a value, or a function of the arguments). */
@@ -197,6 +204,7 @@ function fakeDollar({ answers, connected = true, files = [], store = {}, now = N
         call: async (server, tool, args) => {
           calls.push({ tool, args })
           const answer = typeof answers[tool] === 'function' ? answers[tool](args || {}) : answers[tool]
+          if (answer && answer.__error) return { isError: true, content: [{ type: 'text', text: answer.__error }] }
           return { content: [{ type: 'text', text: JSON.stringify(answer ?? {}) }] }
         },
       },
@@ -280,18 +288,76 @@ test('a full read each hour sees a refund on an old page and drops a deleted inv
   assert.equal(Object.keys(cached).length, 149)
 })
 
+test("a page PayPal's server refuses is read again in smaller pages, and only the refused invoice is lost", async () => {
+  const rows = manyRows(150)
+  const world = fakeDollar({ answers: { ...toolAnswers, list_invoices: pagesOf(rows, new Set([rows[37].id])) } })
+  await syncOnce(world.$, { now: NOW })
+  const reads = world.calls.filter(c => c.tool === 'list_invoices').map(c => `${c.args.page_size}:${c.args.page}`)
+  assert.deepEqual(reads, [
+    '100:1',
+    '10:1', '10:2', '10:3', '10:4',
+    '5:7', '5:8',
+    '1:36', '1:37', '1:38', '1:39', '1:40',
+    '10:5', '10:6', '10:7', '10:8', '10:9', '10:10',
+    '100:2',
+  ])
+  const cached = world.store[ORDERS_KEY]
+  assert.equal(Object.keys(cached.orders).length, 149)
+  assert.equal(cached.orders[rows[37].id], undefined)
+  assert.equal(cached.unread, 1)
+  assert.equal(world.state.value.sync.ok, true)
+  assert.equal(world.state.value.sync.unread, 1)
+  assert.match(world.state.value.sync.note, /1 invoice\(s\) PayPal's server would not send/)
+})
+
+test('an order PayPal stops sending is kept, not dropped as deleted', async () => {
+  const rows = manyRows(120)
+  const refused = new Set()
+  const world = fakeDollar({ answers: { ...toolAnswers, list_invoices: pagesOf(rows, refused) } })
+  await syncOnce(world.$, { now: NOW })
+  refused.add(rows[5].id)
+  await syncOnce(world.$, { now: NOW + FULL_SCAN_MS })
+  assert.ok(world.store[ORDERS_KEY].orders[rows[5].id], 'still cached')
+  assert.equal(Object.keys(world.store[ORDERS_KEY].orders).length, 120)
+  assert.equal(world.store[ORDERS_KEY].fullAt, NOW + FULL_SCAN_MS)
+})
+
+test('a page refused past the highest page number is skipped whole', async () => {
+  const budget = { calls: 10 }
+  const world = fakeDollar({ answers: { list_invoices: () => ({ __error: 'Output validation error: Invalid structured content' }) } })
+  const rows = await readInvoiceRows(world.$, (MAX_PAGE_NUMBER + 4) * 5, 5, budget)
+  assert.deepEqual(rows, { items: [], skipped: 5, end: false })
+  assert.equal(world.calls.length, 1)
+  assert.equal(budget.calls, 10)
+})
+
+test('the extra reads stop at the budget and count the rest as skipped', async () => {
+  const world = fakeDollar({ answers: { list_invoices: () => ({ __error: 'Output validation error: Invalid structured content' }) } })
+  const budget = { calls: 3 }
+  const rows = await readInvoiceRows(world.$, 0, PAGE_SIZE, budget)
+  assert.equal(rows.items.length, 0)
+  assert.equal(rows.skipped, PAGE_SIZE)
+  assert.equal(world.calls.length, 4)
+  assert.equal(budget.calls, 0)
+  assert.equal(isRejectedOutput('MCP error -32602: Output validation error: Invalid structured content for tool list_invoices'), true)
+  assert.equal(isRejectedOutput('PayPal answered 503'), false)
+})
+
 test('a failed invoice read keeps the cached orders and retries the full read', async () => {
   const world = fakeDollar({ answers: toolAnswers })
   await syncOnce(world.$, { now: NOW })
-  world.$.mcp.call = async (server, tool) =>
-    tool === 'list_invoices'
-      ? { isError: true, content: [{ type: 'text', text: 'PayPal answered 503' }] }
-      : { content: [{ type: 'text', text: JSON.stringify(toolAnswers[tool] ?? {}) }] }
+  let invoiceReads = 0
+  world.$.mcp.call = async (server, tool) => {
+    if (tool !== 'list_invoices') return { content: [{ type: 'text', text: JSON.stringify(toolAnswers[tool] ?? {}) }] }
+    invoiceReads += 1
+    return { isError: true, content: [{ type: 'text', text: 'PayPal answered 503' }] }
+  }
   await syncOnce(world.$, { now: NOW + FULL_SCAN_MS })
   assert.equal(world.state.value.sync.ok, false)
   assert.match(world.state.value.sync.note, /list_invoices/)
   assert.equal(world.state.value.week.kpis.net.value, '$140')
   assert.equal(world.store[ORDERS_KEY].fullAt, NOW, 'the full read is still due')
+  assert.equal(invoiceReads, 1, 'an ordinary error is not read again in smaller pages')
 })
 
 test('orders older than the kept window are not cached', async () => {

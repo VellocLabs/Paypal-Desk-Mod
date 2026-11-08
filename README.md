@@ -84,7 +84,9 @@ monthly plan.
 
 The store's order history is a second script: 2,500 orders of a 33-product
 accessories store from Oct 1 to Nov 7, each recorded as a paid invoice on its
-own date (a few refunded), newest day first. It takes about an hour and can
+own date, newest day first. A refunded order keeps its refund (date and
+amount) in the memo; no refund is recorded on PayPal (see *Known PayPal
+issue*). It takes about an hour and can
 be stopped and run again; `--dry-run` prints the plan and calls nothing.
 
 ```bash
@@ -93,7 +95,25 @@ PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:orders -- --from 2026
 ```
 
 The dashboard's windows end yesterday, so before a demo add the days since
-the last run with `--from`/`--to`. For a dispute: send money from your sandbox personal account
+the last run with `--from`/`--to`.
+
+### Known PayPal issue: refunded invoices empty the list
+
+PayPal's MCP server checks each answer against its own output schema before
+sending it, and `list_invoices`' schema lists no `MARKED_AS_REFUNDED` or
+`PARTIALLY_REFUNDED` status. A page holding one refunded invoice is refused
+whole (`-32602 Output validation error … received 'MARKED_AS_REFUNDED' at
+invoices[30].status`). The desk reads a refused page again in pages of 10, 5
+and 1 and skips only what is still refused, within 300 extra calls a sync;
+the sync note counts what it could not read. Sandbox data seeded before the
+seeder stopped recording refunds can be repaired: this deletes the recorded
+refunds of the store's invoices, which then read as paid with the refund in
+the memo.
+
+```bash
+PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run undo-refunds -- --dry-run
+PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run undo-refunds
+``` For a dispute: send money from your sandbox personal account
 to the business account, copy the transaction id, and run
 `npm run seed -- --chargeback <id>`; the sandbox-only chargeback endpoint
 opens a dispute on it. Transaction Search shows new payments only after a
@@ -124,6 +144,7 @@ skills/paypal-rules/SKILL.md    operating rules and the tool map
 templates/board/template.md     the app's session: tools, MCP scoped to this plugin, skills
 scripts/seed-sandbox.mjs        sandbox seeding: invoices, a plan
 scripts/seed-orders.mjs         sandbox seeding: the store's order history
+scripts/undo-refunds.mjs        deletes recorded refunds on the store's invoices
 tests/                          node tests (npm test)
 ```
 

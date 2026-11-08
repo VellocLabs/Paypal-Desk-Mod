@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { CATALOG, COUNTRIES } from '../lib/catalog.mjs'
 import {
   addDays, dayCounts, dayRange, defaultTotal, generateOrders, invoiceBody, makeOrder, orderMemo,
-  parseOrderMemo, paymentBody, refundBody, seedingQueue, summarizeOrders,
+  parseOrderMemo, paymentBody, seedingQueue, summarizeOrders,
 } from '../scripts/lib/orders.mjs'
 
 const LAST = '2026-11-07'
@@ -121,7 +121,6 @@ test('the request bodies carry the order date, the buyer country and the SKU per
   const itemCents = body.items.reduce((sum, i) => sum + Math.round(Number(i.unit_amount.value) * 100) * Number(i.quantity), 0)
   assert.equal(itemCents, o.totalCents)
   assert.deepEqual(paymentBody(o), { method: 'PAYPAL', payment_date: o.date, amount: { currency_code: 'USD', value: (o.totalCents / 100).toFixed(2) } })
-  assert.equal(refundBody(o).refund_date, o.refund.date)
 })
 
 test('the memo carries country, lines and the planned refund, and reads back', () => {
