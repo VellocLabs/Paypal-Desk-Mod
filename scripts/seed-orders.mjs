@@ -15,7 +15,8 @@
  * rata over the range), --refund-rate R (base rate, default 0.03), --workers N
  * (orders in flight at once, default 6), --rpm N (ceiling on requests a
  * minute across all workers, default 150; it drops by itself on a 429),
- * --method PAYPAL|OTHER|… (recorded payment method), --dry-run (print the
+ * --method PAYPAL|OTHER|… (recorded payment method), --oldest-first (the
+ * default seeds the newest day first), --dry-run (print the
  * plan and one request body, call nothing).
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -24,7 +25,7 @@ import { fileURLToPath } from 'node:url'
 import { CALENDAR, CATALOG } from './lib/catalog.mjs'
 import {
   DEFAULT_FROM, DEFAULT_REFUND_RATE, DEFAULT_TO, dayRange, generateOrders, invoiceBody, isDate,
-  paymentBody, refundBody, summarizeOrders,
+  paymentBody, refundBody, seedingQueue, summarizeOrders,
 } from './lib/orders.mjs'
 import { ApiError, createClient } from './lib/rest.mjs'
 
@@ -69,15 +70,32 @@ let failed = 0
 let streak = 0
 const started = Date.now()
 
+const queue = seedingQueue(orders, { oldestFirst: Boolean(args['oldest-first']) })
+const leftByDay = new Map()
+for (const o of queue) leftByDay.set(o.date, (leftByDay.get(o.date) || 0) + 1)
+const failedByDay = new Map()
+console.log(`Seeding ${args['oldest-first'] ? 'oldest' : 'newest'} day first: ${queue[0].date} … ${queue[queue.length - 1].date}`)
+
+function settle(order, ok) {
+  if (!ok) failedByDay.set(order.date, (failedByDay.get(order.date) || 0) + 1)
+  const left = leftByDay.get(order.date) - 1
+  leftByDay.set(order.date, left)
+  if (left === 0) {
+    const bad = failedByDay.get(order.date) || 0
+    console.log(`✓ ${order.date} finished${bad ? ` (${bad} failed, rerun to retry)` : ''}`)
+  }
+}
+
 let next = 0
 let stopping = false
 
 async function worker() {
-  while (!stopping && next < orders.length) {
-    const order = orders[next++]
+  while (!stopping && next < queue.length) {
+    const order = queue[next++]
     try {
       await seedOrder(order)
       done += 1
+      settle(order, true)
       streak = 0
       if (verbose || done % 25 === 0) {
         const tag = order.refund ? ` refunded ${(order.refund.cents / 100).toFixed(2)} on ${order.refund.date}` : ''
@@ -88,6 +106,7 @@ async function worker() {
     } catch (err) {
       failed += 1
       streak += 1
+      settle(order, false)
       console.error(`  ${order.number} failed: ${err.message}`)
       if (!stopping && (done === 0 || streak >= 5)) {
         stopping = true
@@ -194,7 +213,7 @@ function parseArgs(list) {
   const out = {}
   for (let i = 0; i < list.length; i++) {
     const key = list[i].replace(/^--/, '')
-    if (key === 'dry-run') out[key] = true
+    if (key === 'dry-run' || key === 'oldest-first') out[key] = true
     else out[key] = list[++i]
   }
   return out

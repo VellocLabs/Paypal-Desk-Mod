@@ -174,6 +174,14 @@ export function generateOrders({ from = DEFAULT_FROM, to = DEFAULT_TO, total, re
   return orders
 }
 
+/** The order to seed in: newest day first (so the latest week fills first), each day in number order. */
+export function seedingQueue(orders, { oldestFirst = false } = {}) {
+  const days = [...new Set(orders.map(o => o.date))].sort()
+  if (!oldestFirst) days.reverse()
+  const byDay = Map.groupBy(orders, o => o.date)
+  return days.flatMap(d => byDay.get(d))
+}
+
 export const usd = cents => ({ currency_code: 'USD', value: (cents / 100).toFixed(2) })
 
 export function invoiceBody(order) {

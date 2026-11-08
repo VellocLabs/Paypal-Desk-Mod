@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { CATALOG, COUNTRIES } from '../scripts/lib/catalog.mjs'
 import {
   addDays, dayCounts, dayRange, defaultTotal, generateOrders, invoiceBody, makeOrder, orderMemo,
-  parseOrderMemo, paymentBody, refundBody, summarizeOrders,
+  parseOrderMemo, paymentBody, refundBody, seedingQueue, summarizeOrders,
 } from '../scripts/lib/orders.mjs'
 
 const LAST = '2026-11-07'
@@ -138,4 +138,17 @@ test('the memo carries country, lines and the planned refund, and reads back', (
   assert.equal(parseOrderMemo('Seeded by paypal-desk for the sandbox.'), null)
   assert.equal(parseOrderMemo('paypal-desk demo | country=US | items=CAB-C2C*0'), null)
   assert.equal(parseOrderMemo(undefined), null)
+})
+
+test('seeding goes newest day first, each day in number order, every order once', () => {
+  const queue = seedingQueue(full)
+  assert.equal(queue.length, full.length)
+  assert.deepEqual(new Set(queue), new Set(full))
+  assert.equal(queue[0].number, 'PD-20261107-001')
+  assert.equal(queue[queue.length - 1].date, '2026-10-01')
+  for (let i = 1; i < queue.length; i++) {
+    const [a, b] = [queue[i - 1], queue[i]]
+    assert.ok(a.date > b.date || (a.date === b.date && a.number < b.number), `${a.number} then ${b.number}`)
+  }
+  assert.equal(seedingQueue(full, { oldestFirst: true })[0].number, 'PD-20261001-001')
 })
