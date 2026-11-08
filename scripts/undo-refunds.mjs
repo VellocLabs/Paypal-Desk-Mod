@@ -14,7 +14,7 @@
  *
  * Options: --workers N (default 6), --rpm N (default 150).
  */
-import { parseOrderMemo } from '../lib/memo.mjs'
+import { parseOrderMemo } from '../lib/memo.js'
 import { ApiError, createClient } from './lib/rest.mjs'
 
 const PAGE_SIZE = 100

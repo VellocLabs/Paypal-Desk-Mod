@@ -36,9 +36,9 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   week") by editing the file and rebuilding.
 - **Store orders**: an order is an invoice whose memo starts with
   `paypal-desk demo` and carries the buyer's country and the products
-  (`lib/memo.mjs`), since PayPal's invoice list returns neither. The module
+  (`lib/memo.js`), since PayPal's invoice list returns neither. The module
   keeps 62 days of them in its store, reads only the newest pages on each
-  sync and every page once an hour (`lib/sales.mjs` does the figures).
+  sync and every page once an hour (`lib/sales.js` does the figures).
 - **Cases**: open disputes with their response deadline, overdue invoices,
   a refund spike, two payments that look like one, a new request file in
   the inbox folder.

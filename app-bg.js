@@ -13,8 +13,8 @@
  * top-level key per patch, so a day's rollover that changes every figure is
  * still a handful of patches.
  */
-import { addDays, dateOf } from './lib/dates.mjs'
-import { readStoreRow, salesBoard } from './lib/sales.mjs'
+import { addDays, dateOf } from './lib/dates.js'
+import { readStoreRow, salesBoard } from './lib/sales.js'
 
 export const POLL_MS = 5 * 60_000
 export const SERVER = 'paypal'

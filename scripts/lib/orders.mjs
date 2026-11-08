@@ -6,9 +6,9 @@
  * Contract: amounts are integer cents internally and two-decimal USD strings
  * in request bodies; dates are YYYY-MM-DD.
  */
-import { CALENDAR, CATALOG, COMPANIONS, COUNTRIES } from '../../lib/catalog.mjs'
-import { addDays, dayRange, isDate } from '../../lib/dates.mjs'
-import { orderMemo, parseOrderMemo } from '../../lib/memo.mjs'
+import { CALENDAR, CATALOG, COMPANIONS, COUNTRIES } from '../../lib/catalog.js'
+import { addDays, dayRange, isDate } from '../../lib/dates.js'
+import { orderMemo, parseOrderMemo } from '../../lib/memo.js'
 
 export { addDays, dayRange, isDate, orderMemo, parseOrderMemo }
 

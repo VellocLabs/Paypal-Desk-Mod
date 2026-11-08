@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { storeRow } from './fixtures.mjs'
-import { change, compactDollars, latestOrders, lineCents, readStoreRow, salesBoard, windowTotals } from '../lib/sales.mjs'
+import { change, compactDollars, latestOrders, lineCents, readStoreRow, salesBoard, windowTotals } from '../lib/sales.js'
 
 const order = args => readStoreRow(storeRow(args)).order
 

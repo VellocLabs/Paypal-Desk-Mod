@@ -24,7 +24,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CALENDAR, CATALOG } from '../lib/catalog.mjs'
+import { CALENDAR, CATALOG } from '../lib/catalog.js'
 import {
   DEFAULT_FROM, DEFAULT_REFUND_RATE, DEFAULT_TO, dayRange, generateOrders, invoiceBody, isDate,
   paymentBody, seedingQueue, summarizeOrders,

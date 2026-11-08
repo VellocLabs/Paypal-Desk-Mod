@@ -13,7 +13,7 @@ import {
   FULL_SCAN_MS, KEEP_DAYS, MAX_PAGE_NUMBER, ORDERS_KEY, PAGE_SIZE, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
 } from '../app-bg.js'
-import { readStoreRow } from '../lib/sales.mjs'
+import { readStoreRow } from '../lib/sales.js'
 import { storeRow } from './fixtures.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -46,6 +46,17 @@ test('the hooks file names a module inside hooks/, and the server is the one the
   const template = readFileSync(join(root, 'templates/board/template.md'), 'utf8')
   assert.match(template, /^mcp: plugin$/m)
   assert.match(template, /^skills: \[/m)
+})
+
+test('the background module imports only .js files, which the runtime compiler lowers', () => {
+  const files = ['app-bg.js', 'lib/catalog.js', 'lib/dates.js', 'lib/memo.js', 'lib/sales.js']
+  for (const file of files) {
+    const text = readFileSync(join(root, file), 'utf8')
+    for (const [, spec] of text.matchAll(/^import [^'"]*['"]([^'"]+)['"]/gm)) {
+      assert.match(spec, /^\.\.?\/.*\.js$/, `${file} imports ${spec}`)
+      assert.ok(existsSync(join(root, dirname(file), spec)), `${file} imports ${spec}`)
+    }
+  }
 })
 
 test('reads pass, writes ask, denies stand', async () => {

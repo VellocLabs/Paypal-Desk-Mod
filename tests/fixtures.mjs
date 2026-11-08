@@ -1,5 +1,5 @@
 /** Invoice-list rows shaped as PayPal returns them, shared by the tests. */
-import { orderMemo } from '../lib/memo.mjs'
+import { orderMemo } from '../lib/memo.js'
 
 let seq = 0
 /** An invoice-list row as PayPal returns it, for a store order. */
