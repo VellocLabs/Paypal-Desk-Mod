@@ -51,7 +51,8 @@ export function createClient({ clientId, clientSecret, rpm = 50, log = console.l
     tokenExpires = Date.now() + Math.max(60, (json.expires_in || 3600) - 300) * 1000
   }
 
-  async function request(method, path, body) {
+  /** `headers` adds request headers, such as `PayPal-Request-Id` for an idempotent retry. */
+  async function request(method, path, body, headers = {}) {
     let renewed = false
     for (let attempt = 0; ; attempt++) {
       if (!token || Date.now() > tokenExpires) {
@@ -67,6 +68,7 @@ export function createClient({ clientId, clientSecret, rpm = 50, log = console.l
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
             Prefer: 'return=representation',
+            ...headers,
           },
           body: body === undefined ? undefined : JSON.stringify(body),
         })

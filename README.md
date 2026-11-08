@@ -99,6 +99,20 @@ PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:orders -- --from 2026
 The dashboard's windows end yesterday, so before a demo add the days since
 the last run with `--from`/`--to`.
 
+From Nov 8 on, the store takes its orders as direct payments instead: each
+order is a PayPal Orders v2 order paid at once with PayPal's sandbox test
+card, so PayPal holds a real capture, and a refund in the order book is a real
+refund of it once its day has come. A payment is dated when it is made, so
+this script takes today's orders only; run it once a day. The REST app's
+sandbox account must accept card payments.
+
+```bash
+PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:payments -- --dry-run
+PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:payments -- --orders 1
+PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:payments
+PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:payments -- --check
+```
+
 ### Known PayPal issues
 
 **Refunded invoices empty the list.**
