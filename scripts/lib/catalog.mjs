@@ -1,43 +1,44 @@
 /**
  * The demo store's catalog and buyer geography: 33 consumer-electronics
  * accessories in six categories, and eight countries with their share of
- * orders. `weight` is a product's relative chance of being picked for an
- * order line; prices are USD.
+ * orders. Every product sells to the same country mix. `weight` is a product's relative popularity (a long tail: the top
+ * ten sell about two thirds of the units); `refund` scales its refund rate.
+ * Prices are USD; CALENDAR holds the store's dated events.
  */
 
 export const CATALOG = [
-  { sku: 'PWR-20K', name: '20,000 mAh power bank', price: 39, category: 'Charging & power', weight: 6 },
-  { sku: 'PWR-10K', name: '10,000 mAh magnetic power bank', price: 29, category: 'Charging & power', weight: 7 },
-  { sku: 'CHG-3IN1', name: '3-in-1 wireless charger', price: 45, category: 'Charging & power', weight: 5 },
-  { sku: 'CHG-65W', name: '65W GaN USB-C charger', price: 35, category: 'Charging & power', weight: 7 },
-  { sku: 'CHG-PAD', name: '15W wireless charging pad', price: 19, category: 'Charging & power', weight: 6 },
-  { sku: 'CHG-CAR', name: 'Dual USB-C car charger', price: 15, category: 'Charging & power', weight: 5 },
-  { sku: 'CAB-C2C', name: 'USB-C to USB-C cable, 2 m', price: 12, category: 'Cables & hubs', weight: 10 },
-  { sku: 'CAB-C2L', name: 'USB-C to Lightning cable, 1 m', price: 12, category: 'Cables & hubs', weight: 7 },
-  { sku: 'CAB-3PK', name: 'Braided cable 3-pack', price: 19, category: 'Cables & hubs', weight: 7 },
-  { sku: 'HUB-7IN1', name: 'USB-C 7-in-1 hub', price: 59, category: 'Cables & hubs', weight: 4 },
-  { sku: 'HUB-DOCK', name: 'Thunderbolt dock', price: 189, category: 'Cables & hubs', weight: 1 },
+  { sku: 'PWR-20K', name: '20,000 mAh power bank', price: 39, category: 'Charging & power', weight: 11 },
+  { sku: 'PWR-10K', name: '10,000 mAh magnetic power bank', price: 29, category: 'Charging & power', weight: 22 },
+  { sku: 'CHG-3IN1', name: '3-in-1 wireless charger', price: 45, category: 'Charging & power', weight: 6 },
+  { sku: 'CHG-65W', name: '65W GaN USB-C charger', price: 35, category: 'Charging & power', weight: 24 },
+  { sku: 'CHG-PAD', name: '15W wireless charging pad', price: 19, category: 'Charging & power', weight: 8 },
+  { sku: 'CHG-CAR', name: 'Dual USB-C car charger', price: 15, category: 'Charging & power', weight: 4 },
+  { sku: 'CAB-C2C', name: 'USB-C to USB-C cable, 2 m', price: 12, category: 'Cables & hubs', weight: 30 },
+  { sku: 'CAB-C2L', name: 'USB-C to Lightning cable, 1 m', price: 12, category: 'Cables & hubs', weight: 8 },
+  { sku: 'CAB-3PK', name: 'Braided cable 3-pack', price: 19, category: 'Cables & hubs', weight: 10 },
+  { sku: 'HUB-7IN1', name: 'USB-C 7-in-1 hub', price: 59, category: 'Cables & hubs', weight: 7, refund: 1.5 },
+  { sku: 'HUB-DOCK', name: 'Thunderbolt dock', price: 189, category: 'Cables & hubs', weight: 0.5, refund: 2 },
   { sku: 'HUB-HDMI', name: 'USB-C to HDMI adapter', price: 19, category: 'Cables & hubs', weight: 4 },
-  { sku: 'AUD-BUDS', name: 'Noise-cancelling earbuds', price: 129, category: 'Audio', weight: 3 },
-  { sku: 'AUD-OPEN', name: 'Open-ear sport earbuds', price: 79, category: 'Audio', weight: 2 },
-  { sku: 'AUD-HEAD', name: 'Over-ear wireless headphones', price: 159, category: 'Audio', weight: 2 },
-  { sku: 'AUD-SPK', name: 'Portable Bluetooth speaker', price: 49, category: 'Audio', weight: 3 },
+  { sku: 'AUD-BUDS', name: 'Noise-cancelling earbuds', price: 129, category: 'Audio', weight: 13, refund: 2.5 },
+  { sku: 'AUD-OPEN', name: 'Open-ear sport earbuds', price: 79, category: 'Audio', weight: 1.5, refund: 2 },
+  { sku: 'AUD-HEAD', name: 'Over-ear wireless headphones', price: 159, category: 'Audio', weight: 2.5, refund: 1.5 },
+  { sku: 'AUD-SPK', name: 'Portable Bluetooth speaker', price: 49, category: 'Audio', weight: 4 },
   { sku: 'AUD-CASE', name: 'Earbuds silicone case', price: 9, category: 'Audio', weight: 5 },
-  { sku: 'KEY-LOW', name: 'Low-profile mechanical keyboard', price: 149, category: 'Input', weight: 1.5 },
+  { sku: 'KEY-LOW', name: 'Low-profile mechanical keyboard', price: 149, category: 'Input', weight: 0.8, refund: 1.5 },
   { sku: 'KEY-COMP', name: 'Compact 75% keyboard', price: 99, category: 'Input', weight: 2 },
-  { sku: 'MOU-ERGO', name: 'Ergonomic wireless mouse', price: 59, category: 'Input', weight: 3 },
-  { sku: 'MOU-TRAV', name: 'Travel mouse', price: 29, category: 'Input', weight: 3 },
-  { sku: 'KEY-CAPS', name: 'PBT keycap set', price: 35, category: 'Input', weight: 2 },
-  { sku: 'DSK-STAND', name: 'Aluminum laptop stand', price: 49, category: 'Desk', weight: 4 },
-  { sku: 'DSK-MAT', name: 'Felt desk mat', price: 29, category: 'Desk', weight: 4 },
-  { sku: 'DSK-ARM', name: 'Monitor arm', price: 89, category: 'Desk', weight: 2 },
-  { sku: 'DSK-CABLE', name: 'Cable organizer kit', price: 15, category: 'Desk', weight: 4 },
-  { sku: 'DSK-RISER', name: 'Wooden monitor riser', price: 59, category: 'Desk', weight: 2 },
-  { sku: 'DSK-HOOK', name: 'Under-desk headphone hook', price: 12, category: 'Desk', weight: 3 },
-  { sku: 'PHN-CASE', name: 'Phone case with stand', price: 25, category: 'Phone & camera', weight: 6 },
-  { sku: 'PHN-GLASS', name: 'Screen protector 2-pack', price: 15, category: 'Phone & camera', weight: 6 },
-  { sku: 'PHN-MOUNT', name: 'Magnetic phone mount', price: 25, category: 'Phone & camera', weight: 4 },
-  { sku: 'CAM-LIGHT', name: 'Webcam key light', price: 35, category: 'Phone & camera', weight: 2 },
+  { sku: 'MOU-ERGO', name: 'Ergonomic wireless mouse', price: 59, category: 'Input', weight: 5 },
+  { sku: 'MOU-TRAV', name: 'Travel mouse', price: 29, category: 'Input', weight: 2.5 },
+  { sku: 'KEY-CAPS', name: 'PBT keycap set', price: 35, category: 'Input', weight: 1.2 },
+  { sku: 'DSK-STAND', name: 'Aluminum laptop stand', price: 49, category: 'Desk', weight: 6 },
+  { sku: 'DSK-MAT', name: 'Felt desk mat', price: 29, category: 'Desk', weight: 3 },
+  { sku: 'DSK-ARM', name: 'Monitor arm', price: 89, category: 'Desk', weight: 1.5 },
+  { sku: 'DSK-CABLE', name: 'Cable organizer kit', price: 15, category: 'Desk', weight: 2.5 },
+  { sku: 'DSK-RISER', name: 'Wooden monitor riser', price: 59, category: 'Desk', weight: 1 },
+  { sku: 'DSK-HOOK', name: 'Under-desk headphone hook', price: 12, category: 'Desk', weight: 0.8 },
+  { sku: 'PHN-CASE', name: 'Phone case with stand', price: 25, category: 'Phone & camera', weight: 14 },
+  { sku: 'PHN-GLASS', name: 'Screen protector 2-pack', price: 15, category: 'Phone & camera', weight: 16 },
+  { sku: 'PHN-MOUNT', name: 'Magnetic phone mount', price: 25, category: 'Phone & camera', weight: 3 },
+  { sku: 'CAM-LIGHT', name: 'Webcam key light', price: 35, category: 'Phone & camera', weight: 1 },
   { sku: 'CAM-1080', name: '1080p webcam', price: 69, category: 'Phone & camera', weight: 2 },
 ]
 
@@ -134,4 +135,22 @@ export const COUNTRIES = [
       { city: 'Lyon', postal: '69001' },
     ],
   },
+]
+
+/** A second item often bought with the first: [companion, chance]. */
+export const COMPANIONS = {
+  'PHN-CASE': ['PHN-GLASS', 0.35],
+  'HUB-7IN1': ['CAB-C2C', 0.3],
+  'AUD-BUDS': ['AUD-CASE', 0.25],
+  'DSK-ARM': ['DSK-CABLE', 0.3],
+  'KEY-COMP': ['KEY-CAPS', 0.15],
+  'PWR-10K': ['PHN-MOUNT', 0.15],
+}
+
+/**
+ * Store events by date (inclusive): `orders` scales the day's order count,
+ * `categories`/`skus` scale product weights (0 = not on sale that day).
+ */
+export const CALENDAR = [
+  { label: 'Fall sale weekend', from: '2026-10-09', to: '2026-10-11', orders: 1.3 },
 ]

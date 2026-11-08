@@ -1,7 +1,9 @@
 /**
  * A small PayPal sandbox REST client for the seeding scripts: client-
- * credentials token (renewed on expiry or a 401), a request pace of `rpm`
- * calls a minute, and retries with backoff on 429, 5xx and network errors.
+ * credentials token (renewed on expiry or a 401, one fetch shared by
+ * concurrent callers), a pace of at most `rpm` calls a minute across callers
+ * (slowed on a 429, eased back on success), and retries with backoff on 429,
+ * 5xx and network errors.
  *
  * Security: the host is fixed to the sandbox; credentials come only from the
  * caller (the environment) and are never logged.
@@ -19,17 +21,19 @@ export class ApiError extends Error {
   }
 }
 
-export function createClient({ clientId, clientSecret, rpm = 50, log = console.log } = {}) {
+export function createClient({ clientId, clientSecret, rpm = 50, log = console.log, wait = sleep } = {}) {
   let token = null
   let tokenExpires = 0
-  let interval = 60_000 / rpm
+  let tokenPending = null
+  const baseInterval = 60_000 / rpm
+  let interval = baseInterval
   let nextSlot = 0
 
   async function pace() {
     const now = Date.now()
-    const wait = Math.max(0, nextSlot - now)
+    const delay = Math.max(0, nextSlot - now)
     nextSlot = Math.max(now, nextSlot) + interval
-    if (wait) await sleep(wait)
+    if (delay) await wait(delay)
   }
 
   async function fetchToken() {
@@ -50,7 +54,10 @@ export function createClient({ clientId, clientSecret, rpm = 50, log = console.l
   async function request(method, path, body) {
     let renewed = false
     for (let attempt = 0; ; attempt++) {
-      if (!token || Date.now() > tokenExpires) await fetchToken()
+      if (!token || Date.now() > tokenExpires) {
+        tokenPending ??= fetchToken().finally(() => { tokenPending = null })
+        await tokenPending
+      }
       await pace()
       let res
       try {
@@ -69,7 +76,10 @@ export function createClient({ clientId, clientSecret, rpm = 50, log = console.l
         continue
       }
       const text = await res.text()
-      if (res.ok) return text ? JSON.parse(text) : {}
+      if (res.ok) {
+        if (interval > baseInterval) interval = Math.max(baseInterval, interval * 0.97)
+        return text ? JSON.parse(text) : {}
+      }
       if (res.status === 401 && !renewed) {
         renewed = true
         token = null
@@ -88,7 +98,7 @@ export function createClient({ clientId, clientSecret, rpm = 50, log = console.l
     const seconds = Number(retryAfter)
     const ms = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : Math.min(60_000, 5000 * 2 ** attempt)
     log(`  … ${why}, retrying in ${Math.round(ms / 1000)} s (pace now ${Math.round(60_000 / interval)}/min)`)
-    await sleep(ms)
+    await wait(ms)
   }
 
   return { request }

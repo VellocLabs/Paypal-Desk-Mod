@@ -31,7 +31,10 @@ test('day counts sum to the total exactly and stay near the daily average', () =
   const days = dayRange('2026-10-01', '2026-11-07')
   const counts = dayCounts(days, 2500)
   assert.equal(counts.reduce((a, b) => a + b, 0), 2500)
-  for (const n of counts) assert.ok(n >= 50 && n <= 85, `day count ${n}`)
+  for (const n of counts) assert.ok(n >= 45 && n <= 95, `day count ${n}`)
+  const sale = days.map((d, i) => [d, counts[i]]).filter(([d]) => d >= '2026-10-09' && d <= '2026-10-11')
+  const average = 2500 / days.length
+  assert.ok(sale.reduce((a, [, n]) => a + n, 0) / sale.length > average * 1.15, 'the sale weekend stands out')
 })
 
 test('a single test day gets the pro-rata default or the count asked for', () => {
@@ -55,8 +58,46 @@ test('the basket and country mix look like a small accessories store', () => {
   assert.ok(Math.abs(share('CA') - 0.16) < 0.03, `CA ${share('CA')}`)
   assert.ok(s.refunds > 50 && s.refunds < 160, `refunds ${s.refunds}`)
   for (const o of full) {
-    assert.ok(o.lines.length >= 1 && o.lines.length <= 3)
+    assert.ok(o.lines.length >= 1 && o.lines.length <= 4)
     assert.equal(new Set(o.lines.map(l => l.sku)).size, o.lines.length)
+  }
+})
+
+const unitsBy = orders => {
+  const bySku = {}
+  for (const o of orders) {
+    for (const l of o.lines) {
+      const row = (bySku[l.sku] ??= { units: 0, byCountry: {} })
+      row.units += l.qty
+      row.byCountry[o.country] = (row.byCountry[o.country] || 0) + l.qty
+    }
+  }
+  return Object.entries(bySku).sort((a, b) => b[1].units - a[1].units)
+}
+
+test('sales follow a long tail: a few products sell most of the units', () => {
+  const ranked = unitsBy(full)
+  const units = ranked.reduce((a, [, r]) => a + r.units, 0)
+  const top = k => ranked.slice(0, k).reduce((a, [, r]) => a + r.units, 0) / units
+  assert.ok(top(3) > 0.25 && top(3) < 0.4, `top 3 ${top(3)}`)
+  assert.ok(top(10) > 0.6 && top(10) < 0.78, `top 10 ${top(10)}`)
+  assert.equal(ranked[0][0], 'CAB-C2C')
+})
+
+test('every best-selling product sells to the same country mix as the store', () => {
+  for (const [sku, row] of unitsBy(full).slice(0, 10)) {
+    const us = row.byCountry.US / row.units
+    const ca = (row.byCountry.CA || 0) / row.units
+    assert.ok(Math.abs(us - 0.6) < 0.07, `${sku} US ${us}`)
+    assert.ok(Math.abs(ca - 0.16) < 0.06, `${sku} CA ${ca}`)
+  }
+})
+
+test('every product sells in every week of the run', () => {
+  for (let start = '2026-10-01'; start <= '2026-11-01'; start = addDays(start, 7)) {
+    const week = full.filter(o => o.date >= start && o.date <= addDays(start, 6))
+    const sold = new Set(week.flatMap(o => o.lines.map(l => l.sku)))
+    assert.ok(sold.size >= 30, `week of ${start}: ${sold.size} products`)
   }
 })
 

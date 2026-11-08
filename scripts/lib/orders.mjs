@@ -7,12 +7,12 @@
  * Contract: amounts are integer cents internally and two-decimal USD strings
  * in request bodies; dates are YYYY-MM-DD.
  */
-import { CATALOG, COUNTRIES } from './catalog.mjs'
+import { CALENDAR, CATALOG, COMPANIONS, COUNTRIES } from './catalog.mjs'
 
 export const DEFAULT_FROM = '2026-10-01'
 export const DEFAULT_TO = '2026-11-07'
 export const DEFAULT_TOTAL = 2500
-export const DEFAULT_REFUND_RATE = 0.04
+export const DEFAULT_REFUND_RATE = 0.03
 
 const DAY_MS = 86_400_000
 // Sunday … Saturday: weekend orders run a little higher.
@@ -64,13 +64,19 @@ export function defaultTotal(dayCount) {
   return Math.round((DEFAULT_TOTAL * dayCount) / dayRange(DEFAULT_FROM, DEFAULT_TO).length)
 }
 
-/** Splits `total` orders over `days` (weekday shape, a mild upward trend, noise); sums to `total` exactly. */
+export const eventsOn = date => CALENDAR.filter(e => e.from <= date && date <= e.to)
+
+/**
+ * Splits `total` orders over `days` (weekday shape, a run-up toward the
+ * holidays, store events, ±10% noise); sums to `total` exactly.
+ */
 export function dayCounts(days, total) {
   const n = days.length
   const weights = days.map((d, i) => {
-    const trend = n > 1 ? 0.92 + (0.16 * i) / (n - 1) : 1
+    const trend = n > 1 ? 0.88 + (0.27 * i) / (n - 1) : 1
     const noise = 0.9 + 0.2 * rng(`day:${d}`)()
-    return WEEKDAY[new Date(`${d}T00:00:00Z`).getUTCDay()] * trend * noise
+    const events = eventsOn(d).reduce((f, e) => f * (e.orders ?? 1), 1)
+    return WEEKDAY[new Date(`${d}T00:00:00Z`).getUTCDay()] * trend * noise * events
   })
   const sum = weights.reduce((a, b) => a + b, 0)
   const raw = weights.map(w => (w / sum) * total)
@@ -82,6 +88,22 @@ export function dayCounts(days, total) {
     counts[i] += 1
   }
   return counts
+}
+
+const BY_SKU = new Map(CATALOG.map(p => [p.sku, p]))
+const weightCache = new Map()
+
+/** Product weights on `date`: popularity × store events; the same for every country. */
+export function productWeights(date) {
+  if (weightCache.has(date)) return weightCache.get(date)
+  const events = eventsOn(date)
+  const weights = new Map(CATALOG.map(p => {
+    let w = p.weight
+    for (const e of events) w *= (e.categories?.[p.category] ?? 1) * (e.skus?.[p.sku] ?? 1)
+    return [p.sku, w]
+  }))
+  weightCache.set(date, weights)
+  return weights
 }
 
 export function orderNumber(date, index) {
@@ -98,20 +120,28 @@ export function makeOrder(number, date, { refundRate = DEFAULT_REFUND_RATE, last
   const handle = `${first}.${last}`.toLowerCase().replace(/[^a-z.]/g, '')
   const email = `${handle}${r() < 0.5 ? '' : 10 + Math.floor(r() * 90)}@example.com`
 
-  const lineCount = r() < 0.55 ? 1 : r() < 0.67 ? 2 : 3
+  const weights = productWeights(date)
   const lines = []
-  const used = new Set()
-  while (lines.length < lineCount) {
-    const product = pickWeighted(r, CATALOG, p => p.weight)
-    if (used.has(product.sku)) continue
-    used.add(product.sku)
-    const qty = r() < (product.price <= 20 ? 0.2 : 0.06) ? 2 : 1
+  const add = product => {
+    const qty = r() < (product.price <= 20 ? 0.2 : 0.05) ? 2 : 1
     lines.push({ sku: product.sku, name: product.name, unitCents: Math.round(product.price * 100), qty })
+  }
+  const draw = () => {
+    const open = CATALOG.filter(p => weights.get(p.sku) > 0 && !lines.some(l => l.sku === p.sku))
+    return pickWeighted(r, open, p => weights.get(p.sku))
+  }
+  add(draw())
+  const companion = COMPANIONS[lines[0].sku]
+  if (companion && weights.get(companion[0]) > 0 && r() < companion[1]) add(BY_SKU.get(companion[0]))
+  if (r() < 0.35) {
+    add(draw())
+    if (r() < 0.3) add(draw())
   }
   const totalCents = lines.reduce((sum, l) => sum + l.unitCents * l.qty, 0)
 
+  const refundFactor = Math.max(...lines.map(l => BY_SKU.get(l.sku).refund ?? 1))
   let refund = null
-  if (r() < refundRate) {
+  if (r() < refundRate * refundFactor) {
     const full = lines.length === 1 || r() < 0.7
     let refundDate = addDays(date, 1 + Math.floor(r() * 10))
     if (lastDay && refundDate > lastDay) refundDate = lastDay

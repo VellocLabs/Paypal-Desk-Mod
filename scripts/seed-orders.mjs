@@ -12,14 +12,16 @@
  *   node scripts/seed-orders.mjs                 (2,500 orders, 2026-10-01 … 2026-11-07)
  *
  * Options: --from, --to (YYYY-MM-DD), --orders N (default: 2,500 spread pro
- * rata over the range), --refund-rate R (default 0.04), --rpm N (requests a
- * minute, default 50), --method PAYPAL|OTHER|… (recorded payment method),
- * --dry-run (print the plan and one request body, call nothing).
+ * rata over the range), --refund-rate R (base rate, default 0.03), --workers N
+ * (orders in flight at once, default 6), --rpm N (ceiling on requests a
+ * minute across all workers, default 150; it drops by itself on a 429),
+ * --method PAYPAL|OTHER|… (recorded payment method), --dry-run (print the
+ * plan and one request body, call nothing).
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CATALOG } from './lib/catalog.mjs'
+import { CALENDAR, CATALOG } from './lib/catalog.mjs'
 import {
   DEFAULT_FROM, DEFAULT_REFUND_RATE, DEFAULT_TO, dayRange, generateOrders, invoiceBody, isDate,
   paymentBody, refundBody, summarizeOrders,
@@ -38,7 +40,9 @@ if (to > today) fail(`--to ${to} is in the future; recorded payments cannot be.`
 const total = args.orders === undefined ? undefined : Number(args.orders)
 if (total !== undefined && !(Number.isInteger(total) && total > 0)) fail('--orders must be a positive whole number.')
 const refundRate = args['refund-rate'] === undefined ? DEFAULT_REFUND_RATE : Number(args['refund-rate'])
-const rpm = args.rpm === undefined ? 50 : Number(args.rpm)
+const rpm = args.rpm === undefined ? 150 : Number(args.rpm)
+const workers = args.workers === undefined ? 6 : Number(args.workers)
+if (!(rpm > 0) || !(Number.isInteger(workers) && workers > 0)) fail('--rpm and --workers must be positive numbers.')
 const method = args.method ?? 'PAYPAL'
 
 const orders = generateOrders({ from, to, total, refundRate })
@@ -65,27 +69,38 @@ let failed = 0
 let streak = 0
 const started = Date.now()
 
-for (const order of orders) {
-  try {
-    await seedOrder(order)
-    done += 1
-    streak = 0
-    if (verbose || done % 25 === 0) {
-      const tag = order.refund ? ` refunded ${(order.refund.cents / 100).toFixed(2)} on ${order.refund.date}` : ''
-      console.log(`  ${order.number} ${order.country} $${(order.totalCents / 100).toFixed(2)} paid${tag}  (${done}/${orders.length})`)
-    }
-  } catch (err) {
-    failed += 1
-    streak += 1
-    console.error(`  ${order.number} failed: ${err.message}`)
-    if (done === 0 || streak >= 5) {
-      console.error('\nStopping: the first order or five in a row failed, so the cause is likely not this one order.')
-      break
+let next = 0
+let stopping = false
+
+async function worker() {
+  while (!stopping && next < orders.length) {
+    const order = orders[next++]
+    try {
+      await seedOrder(order)
+      done += 1
+      streak = 0
+      if (verbose || done % 25 === 0) {
+        const tag = order.refund ? ` refunded ${(order.refund.cents / 100).toFixed(2)} on ${order.refund.date}` : ''
+        const perMin = done / Math.max(1 / 60, (Date.now() - started) / 60_000)
+        const eta = Math.ceil((orders.length - done - failed) / perMin)
+        console.log(`  ${order.number} ${order.country} $${(order.totalCents / 100).toFixed(2)} paid${tag}  (${done}/${orders.length}, ~${eta} min left)`)
+      }
+    } catch (err) {
+      failed += 1
+      streak += 1
+      console.error(`  ${order.number} failed: ${err.message}`)
+      if (!stopping && (done === 0 || streak >= 5)) {
+        stopping = true
+        console.error('\nStopping: the first order or five in a row failed, so the cause is likely not one order.')
+      }
     }
   }
 }
 
+await Promise.all(Array.from({ length: Math.min(workers, orders.length) }, worker))
+
 console.log(`\nDone: ${done} order(s) seeded, ${failed} failed, in ${Math.round((Date.now() - started) / 1000)} s.`)
+if (failed || stopping) console.log('Run the same command again to retry: finished steps are skipped.')
 await probe()
 
 async function seedOrder(order) {
@@ -170,7 +185,9 @@ function printPlan(p) {
   console.log(`  revenue $${(p.revenueCents / 100).toFixed(2)}, AOV $${(p.aovCents / 100).toFixed(2)}, ${p.refunds} refund(s)`)
   console.log(`  countries: ${countries}`)
   console.log(`  products used: ${Object.keys(p.bySku).length}/${CATALOG.length}; top: ${top}`)
-  console.log(`  ${p.requests} API calls at ${rpm}/min ≈ ${Math.ceil(p.requests / rpm)} min`)
+  const events = CALENDAR.filter(e => e.from <= to && e.to >= from && e.from > '0000-01-01')
+  for (const e of events) console.log(`  event: ${e.label}, ${e.from} … ${e.to}`)
+  console.log(`  ${p.requests} API calls, ${workers} workers, at most ${rpm}/min ≈ ${Math.ceil(p.requests / rpm)} min or more`)
 }
 
 function parseArgs(list) {
