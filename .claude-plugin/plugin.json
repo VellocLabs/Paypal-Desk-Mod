@@ -1,0 +1,38 @@
+{
+  "name": "paypal-desk",
+  "version": "0.1.0",
+  "description": "A resident desk for PayPal merchants: a background module watches invoices, disputes and payments through PayPal's MCP server, a live dashboard shows them, and the agent works each case with your confirmation.",
+  "author": {
+    "name": "VellocLabs"
+  },
+  "license": "MIT",
+  "keywords": ["mod", "app", "paypal", "mcp", "merchant", "invoices", "disputes"],
+  "requires": {
+    "features": ["apps", "template-mcp-scope"]
+  },
+  "templates": {
+    "board": {
+      "title": {
+        "en": "PayPal Desk",
+        "zh-CN": "PayPal 工作台"
+      },
+      "description": {
+        "en": "Your PayPal account, watched in the background: sales, overdue invoices and open disputes as live figures, and an agent that works each case with your confirmation.",
+        "zh-CN": "后台持续关注你的 PayPal 账户：销售、逾期发票和未决争议实时呈现，每个待办由 agent 处理、由你确认。"
+      },
+      "icon": "lucide:wallet",
+      "launcher": "hidden",
+      "app": {
+        "seed": "./app",
+        "seedVersion": 1,
+        "data": "data/state.json",
+        "background": {
+          "module": "./app-bg.js",
+          "fs": {
+            "read": ["~/Documents/paypal-desk/inbox"]
+          }
+        }
+      }
+    }
+  }
+}

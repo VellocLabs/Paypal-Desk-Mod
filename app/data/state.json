@@ -1,0 +1,24 @@
+{
+  "summary": {
+    "period": "Waiting for the first sync",
+    "sales": "—",
+    "salesDelta": "",
+    "salesTrend": "flat",
+    "refunds": "—",
+    "refundRate": "",
+    "overdueCount": "—",
+    "overdueAmount": "",
+    "disputeCount": "—",
+    "disputeDue": "",
+    "casesNote": "Cases appear after the first sync",
+    "invoicesNote": "",
+    "disputesNote": "",
+    "plansNote": ""
+  },
+  "series": { "daily": [] },
+  "cases": [],
+  "invoices": [],
+  "disputes": [],
+  "plans": [],
+  "sync": { "ok": false, "note": "Connecting to PayPal…" }
+}

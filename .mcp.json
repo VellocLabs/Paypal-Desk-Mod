@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "paypal": {
+      "type": "http",
+      "url": "https://mcp.sandbox.paypal.com/mcp"
+    }
+  }
+}
