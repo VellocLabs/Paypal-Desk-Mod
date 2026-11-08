@@ -62,28 +62,32 @@ export async function syncOnce($, { inbox, now }) {
   }
 
   const errors = {}
+  const unavailable = []
+  const read = (tool, args) => readList($, tool, args, errors, unavailable)
   const raw = {
-    invoices: await readList($, 'list_invoices', { page: 1, page_size: ROW_CAP, total_required: true }, errors),
-    disputes: await readList($, 'list_disputes', { page_size: ROW_CAP }, errors),
-    plans: await readList($, 'list_subscription_plans', { page: 1, page_size: ROW_CAP }, errors),
-    transactions: await readList(
-      $,
-      'list_transactions',
-      { start_date: isoDate(now - SERIES_DAYS * 86_400_000), end_date: isoDate(now), fields: 'all', page_size: 500 },
-      errors,
-    ),
+    invoices: await read('list_invoices', { page: 1, page_size: ROW_CAP, total_required: true }),
+    disputes: await read('list_disputes', { page_size: ROW_CAP }),
+    plans: await read('list_subscription_plans', { page: 1, page_size: ROW_CAP }),
+    transactions: await read('list_transactions', {
+      start_date: isoDate(now - SERIES_DAYS * 86_400_000),
+      end_date: isoDate(now),
+      fields: 'all',
+      page_size: 500,
+    }),
   }
   const inboxFiles = inbox ? await pullInbox($, inbox) : []
   const handled = await readHandled($)
 
-  const next = deriveState({ previous, raw, inboxFiles, handled, errors, now })
+  const next = deriveState({ previous, raw, inboxFiles, handled, errors, unavailable, now })
   await $.app.state.set(next)
 }
 
 // ---- reading -------------------------------------------------------------
 
-/** Calls a list tool and returns its JSON, or `[]` after recording the error. */
-async function readList($, tool, args, errors) {
+/** Calls a list tool and returns its JSON, or `[]` after recording the error.
+ *  A tool the server does not offer is listed in `unavailable`, not `errors`:
+ *  the dashboard says so once instead of failing every sync. */
+async function readList($, tool, args, errors, unavailable = []) {
   try {
     const result = await $.mcp.call(SERVER, tool, args)
     const value = resultJson(result)
@@ -93,9 +97,16 @@ async function readList($, tool, args, errors) {
     }
     return value
   } catch (err) {
-    errors[tool] = err instanceof Error ? err.message : String(err)
+    const message = err instanceof Error ? err.message : String(err)
+    if (isToolMissing(message)) unavailable.push(tool)
+    else errors[tool] = message
     return []
   }
+}
+
+/** The MCP "unknown tool" refusal (-32602 with "not found"). */
+export function isToolMissing(message) {
+  return /tool\b.*\bnot found|unknown tool/i.test(message)
 }
 
 /** The result's structured content, else its first text block parsed as JSON, else the text. */
@@ -160,7 +171,7 @@ async function readHandled($) {
 // ---- deriving (pure) -------------------------------------------------------
 
 /** The dashboard state from the raw reads. Pure: no `$`, so tests can drive it. */
-export function deriveState({ previous = {}, raw = {}, inboxFiles = [], handled = [], errors = {}, now }) {
+export function deriveState({ previous = {}, raw = {}, inboxFiles = [], handled = [], errors = {}, unavailable = [], now }) {
   const invoices = normalizeInvoices(raw.invoices, now)
   const disputes = normalizeDisputes(raw.disputes)
   const plans = normalizePlans(raw.plans)
@@ -172,13 +183,17 @@ export function deriveState({ previous = {}, raw = {}, inboxFiles = [], handled 
     .sort((a, b) => toneRank(b.tone) - toneRank(a.tone) || kindRank(b.kind) - kindRank(a.kind) || a.since - b.since)
     .slice(0, CASE_CAP)
   const errorNames = Object.keys(errors)
+  const plansOffered = !unavailable.includes('list_subscription_plans')
+  const noteParts = [`Synced ${timeOfDay(now)}`]
+  if (errorNames.length) noteParts.push(`${errorNames.length} read(s) failed: ${errorNames.join(', ')}`)
+  if (unavailable.length) noteParts.push(`not offered by this server: ${unavailable.join(', ')}`)
   return {
     summary: {
       ...summary,
       casesNote: cases.length === 0 ? 'Nothing needs a decision right now' : `${cases.length} open, most urgent first`,
       invoicesNote: `${invoices.length} most recent`,
       disputesNote: disputes.length === 0 ? 'No disputes' : `${disputes.filter(d => d.open).length} open of ${disputes.length}`,
-      plansNote: `${plans.length} plans`,
+      plansNote: plansOffered ? `${plans.length} plans` : 'Not offered by this PayPal connection',
     },
     series: { daily: series },
     cases,
@@ -189,9 +204,8 @@ export function deriveState({ previous = {}, raw = {}, inboxFiles = [], handled 
       at: now,
       ok: errorNames.length === 0,
       errors: errorNames.length ? errors : undefined,
-      note: errorNames.length === 0
-        ? `Synced ${timeOfDay(now)}`
-        : `Synced ${timeOfDay(now)}, ${errorNames.length} read(s) failed: ${errorNames.join(', ')}`,
+      unavailable: unavailable.length ? unavailable : undefined,
+      note: noteParts.join(' · '),
     },
     handled: previous.handled,
   }

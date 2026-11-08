@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { describeCall, isWriteTool, register as registerGuard } from '../hooks/guard.js'
-import { deriveState, duplicatePayments, resultJson, syncOnce, register as registerBackground } from '../app-bg.js'
+import { deriveState, duplicatePayments, isToolMissing, resultJson, syncOnce, register as registerBackground } from '../app-bg.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const readJson = path => JSON.parse(readFileSync(join(root, path), 'utf8'))
@@ -128,6 +128,16 @@ test('handled cases are dropped and read errors are reported in the sync note', 
   assert.ok(!state.cases.some(c => c.id === 'dispute:PP-D-1' || c.id === 'invoice:INV2-A'))
   assert.equal(state.sync.ok, false)
   assert.match(state.sync.note, /list_subscription_plans/)
+})
+
+test('a tool the server does not offer is noted once, not counted as a failed read', () => {
+  assert.equal(isToolMissing('MCP error -32602: Tool list_subscription_plans not found'), true)
+  assert.equal(isToolMissing('MCP error -32602: Structured content does not match the tool\'s output schema'), false)
+  const state = deriveState({ raw, unavailable: ['list_subscription_plans'], now: NOW })
+  assert.equal(state.sync.ok, true)
+  assert.deepEqual(state.sync.unavailable, ['list_subscription_plans'])
+  assert.match(state.sync.note, /not offered by this server: list_subscription_plans/)
+  assert.equal(state.summary.plansNote, 'Not offered by this PayPal connection')
 })
 
 test('duplicatePayments pairs same payer, same amount, within ten minutes', () => {
