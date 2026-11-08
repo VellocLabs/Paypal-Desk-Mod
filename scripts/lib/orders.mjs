@@ -88,7 +88,7 @@ export function orderNumber(date, index) {
   return `PD-${date.replaceAll('-', '')}-${String(index).padStart(3, '0')}`
 }
 
-export function makeOrder(number, date, { refundRate = DEFAULT_REFUND_RATE, today } = {}) {
+export function makeOrder(number, date, { refundRate = DEFAULT_REFUND_RATE, lastDay } = {}) {
   const r = rng(number)
   const country = pickWeighted(r, COUNTRIES, c => c.share)
   const first = pick(r, country.first)
@@ -114,7 +114,7 @@ export function makeOrder(number, date, { refundRate = DEFAULT_REFUND_RATE, toda
   if (r() < refundRate) {
     const full = lines.length === 1 || r() < 0.7
     let refundDate = addDays(date, 1 + Math.floor(r() * 10))
-    if (today && refundDate > today) refundDate = today
+    if (lastDay && refundDate > lastDay) refundDate = lastDay
     refund = {
       date: refundDate,
       cents: full ? totalCents : lines[0].unitCents * lines[0].qty,
@@ -134,12 +134,12 @@ export function makeOrder(number, date, { refundRate = DEFAULT_REFUND_RATE, toda
   }
 }
 
-export function generateOrders({ from = DEFAULT_FROM, to = DEFAULT_TO, total, refundRate, today } = {}) {
+export function generateOrders({ from = DEFAULT_FROM, to = DEFAULT_TO, total, refundRate, lastDay = to } = {}) {
   const days = dayRange(from, to)
   const counts = dayCounts(days, total ?? defaultTotal(days.length))
   const orders = []
   days.forEach((date, i) => {
-    for (let k = 1; k <= counts[i]; k++) orders.push(makeOrder(orderNumber(date, k), date, { refundRate, today }))
+    for (let k = 1; k <= counts[i]; k++) orders.push(makeOrder(orderNumber(date, k), date, { refundRate, lastDay }))
   })
   return orders
 }
@@ -161,7 +161,7 @@ export function invoiceBody(order) {
       invoice_date: order.date,
       currency_code: 'USD',
       payment_term: { term_type: 'DUE_ON_RECEIPT' },
-      memo: 'Sandbox demo order seeded by paypal-desk.',
+      memo: orderMemo(order),
     },
     primary_recipients: [{
       billing_info: {
@@ -178,6 +178,40 @@ export function invoiceBody(order) {
       unit_of_measure: 'QUANTITY',
     })),
   }
+}
+
+const MEMO_TAG = 'paypal-desk demo'
+
+/**
+ * The order summary kept in the invoice memo, which the invoice list returns
+ * (it does not return items, the bill-to address or refunds):
+ * `paypal-desk demo | country=US | items=CAB-C2C*2,MOU-ERGO*1 | refund=2026-10-05:24.00`.
+ * The refund part is planned at creation; a reader trusts it only when the
+ * invoice status says the invoice was refunded.
+ */
+export function orderMemo(order) {
+  const parts = [MEMO_TAG, `country=${order.country}`, `items=${order.lines.map(l => `${l.sku}*${l.qty}`).join(',')}`]
+  if (order.refund) parts.push(`refund=${order.refund.date}:${(order.refund.cents / 100).toFixed(2)}`)
+  return parts.join(' | ')
+}
+
+/** Reads an `orderMemo` text back; null for any other memo. */
+export function parseOrderMemo(text) {
+  if (typeof text !== 'string' || !text.startsWith(`${MEMO_TAG} |`)) return null
+  const fields = Object.fromEntries(text.split(' | ').slice(1).map(part => {
+    const at = part.indexOf('=')
+    return [part.slice(0, at), part.slice(at + 1)]
+  }))
+  if (!/^[A-Z]{2}$/.test(fields.country || '') || !fields.items) return null
+  const items = fields.items.split(',').map(entry => {
+    const [sku, qty] = entry.split('*')
+    return { sku, qty: Number(qty) }
+  })
+  if (items.some(i => !i.sku || !Number.isInteger(i.qty) || i.qty < 1)) return null
+  let refund = null
+  const m = /^(\d{4}-\d{2}-\d{2}):(\d+\.\d{2})$/.exec(fields.refund || '')
+  if (m) refund = { date: m[1], value: m[2] }
+  return { country: fields.country, items, refund }
 }
 
 export function paymentBody(order, method = 'PAYPAL') {

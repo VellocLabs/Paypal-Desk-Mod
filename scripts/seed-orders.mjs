@@ -41,7 +41,7 @@ const refundRate = args['refund-rate'] === undefined ? DEFAULT_REFUND_RATE : Num
 const rpm = args.rpm === undefined ? 50 : Number(args.rpm)
 const method = args.method ?? 'PAYPAL'
 
-const orders = generateOrders({ from, to, total, refundRate, today })
+const orders = generateOrders({ from, to, total, refundRate })
 const plan = summarizeOrders(orders)
 printPlan(plan)
 
@@ -129,19 +129,25 @@ async function adoptExisting(order, entry) {
 }
 
 async function probe() {
-  const first = orders.map(o => journal[o.number]?.id).find(Boolean)
-  if (!first) return
+  const seeded = orders.filter(o => journal[o.number]?.id)
+  const picks = [['first seeded invoice', seeded[0]], ['first refunded invoice', seeded.find(o => o.refund)]]
   try {
-    const invoice = await client.request('GET', `/v2/invoicing/invoices/${first}`)
-    console.log('\nCheck of the first seeded invoice:')
-    console.log(`  status ${invoice.status}, invoice_date ${invoice.detail?.invoice_date}`)
-    console.log(`  payments ${JSON.stringify(invoice.payments ?? null)}`)
-    console.log(`  refunds ${JSON.stringify(invoice.refunds ?? null)}`)
-    console.log(`  bill-to country ${invoice.primary_recipients?.[0]?.billing_info?.address?.country_code}`)
-    const list = await client.request('GET', '/v2/invoicing/invoices?page=1&page_size=5&total_required=true')
-    const item = list.items?.[0] ?? {}
-    console.log(`\nList answer: total_items ${list.total_items}, item keys: ${Object.keys(item).join(', ')}`)
-    console.log(`  first item: ${JSON.stringify(item).slice(0, 1200)}`)
+    for (const [label, order] of picks) {
+      if (!order) continue
+      const invoice = await client.request('GET', `/v2/invoicing/invoices/${journal[order.number].id}`)
+      console.log(`\nCheck of the ${label} (${order.number}):`)
+      console.log(`  status ${invoice.status}, invoice_date ${invoice.detail?.invoice_date}`)
+      console.log(`  memo ${invoice.detail?.memo}`)
+      console.log(`  payments ${JSON.stringify(invoice.payments ?? null)}`)
+      console.log(`  refunds ${JSON.stringify(invoice.refunds ?? null)}`)
+    }
+    const list = await client.request('GET', '/v2/invoicing/invoices?page=1&page_size=100&total_required=true')
+    const mine = new Set(seeded.map(o => o.number))
+    const rows = (list.items ?? []).filter(i => mine.has(i.detail?.invoice_number))
+    console.log(`\nList answer: total_items ${list.total_items}; this run's invoices on page 1: ${rows.length}`)
+    for (const row of rows.slice(0, 12)) {
+      console.log(`  ${row.detail.invoice_number} ${row.status} ${row.amount?.value} memo=${JSON.stringify(row.detail?.memo ?? null)}`)
+    }
   } catch (err) {
     console.error(`Check failed: ${err.message}`)
   }

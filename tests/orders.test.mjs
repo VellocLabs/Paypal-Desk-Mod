@@ -7,12 +7,12 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { CATALOG, COUNTRIES } from '../scripts/lib/catalog.mjs'
 import {
-  addDays, dayCounts, dayRange, defaultTotal, generateOrders, invoiceBody, makeOrder, paymentBody,
-  refundBody, summarizeOrders,
+  addDays, dayCounts, dayRange, defaultTotal, generateOrders, invoiceBody, makeOrder, orderMemo,
+  parseOrderMemo, paymentBody, refundBody, summarizeOrders,
 } from '../scripts/lib/orders.mjs'
 
-const TODAY = '2026-11-08'
-const full = generateOrders({ today: TODAY })
+const LAST = '2026-11-07'
+const full = generateOrders()
 
 test('the catalog has 33 distinct products and the country shares add up to 100', () => {
   assert.equal(CATALOG.length, 33)
@@ -36,14 +36,14 @@ test('day counts sum to the total exactly and stay near the daily average', () =
 
 test('a single test day gets the pro-rata default or the count asked for', () => {
   assert.equal(defaultTotal(1), 66)
-  const day = generateOrders({ from: '2026-09-25', to: '2026-09-25', total: 10, today: TODAY })
+  const day = generateOrders({ from: '2026-09-25', to: '2026-09-25', total: 10 })
   assert.equal(day.length, 10)
   assert.ok(day.every(o => o.date === '2026-09-25'))
   assert.equal(day[0].number, 'PD-20260925-001')
 })
 
 test('an order is the same every time it is generated from its number', () => {
-  assert.deepEqual(makeOrder('PD-20261015-007', '2026-10-15', { today: TODAY }), makeOrder('PD-20261015-007', '2026-10-15', { today: TODAY }))
+  assert.deepEqual(makeOrder('PD-20261015-007', '2026-10-15', { lastDay: LAST }), makeOrder('PD-20261015-007', '2026-10-15', { lastDay: LAST }))
 })
 
 test('the basket and country mix look like a small accessories store', () => {
@@ -60,10 +60,10 @@ test('the basket and country mix look like a small accessories store', () => {
   }
 })
 
-test('refunds fall after the order, never after today, and never exceed what was paid', () => {
+test('refunds fall after the order, never after the last day of the run, and never exceed what was paid', () => {
   for (const o of full.filter(x => x.refund)) {
-    assert.ok(o.refund.date > o.date || o.refund.date === TODAY, `${o.number} ${o.refund.date}`)
-    assert.ok(o.refund.date <= TODAY)
+    assert.ok(o.refund.date > o.date || o.refund.date === LAST, `${o.number} ${o.refund.date}`)
+    assert.ok(o.refund.date <= LAST)
     assert.ok(o.refund.date <= addDays(o.date, 10))
     assert.ok(o.refund.cents > 0 && o.refund.cents <= o.totalCents)
   }
@@ -81,4 +81,20 @@ test('the request bodies carry the order date, the buyer country and the SKU per
   assert.equal(itemCents, o.totalCents)
   assert.deepEqual(paymentBody(o), { method: 'PAYPAL', payment_date: o.date, amount: { currency_code: 'USD', value: (o.totalCents / 100).toFixed(2) } })
   assert.equal(refundBody(o).refund_date, o.refund.date)
+})
+
+test('the memo carries country, lines and the planned refund, and reads back', () => {
+  const o = full.find(x => x.refund && x.lines.length === 3)
+  const memo = invoiceBody(o).detail.memo
+  assert.ok(memo.length < 500)
+  assert.deepEqual(parseOrderMemo(memo), {
+    country: o.country,
+    items: o.lines.map(l => ({ sku: l.sku, qty: l.qty })),
+    refund: { date: o.refund.date, value: (o.refund.cents / 100).toFixed(2) },
+  })
+  const plain = full.find(x => !x.refund)
+  assert.equal(parseOrderMemo(orderMemo(plain)).refund, null)
+  assert.equal(parseOrderMemo('Seeded by paypal-desk for the sandbox.'), null)
+  assert.equal(parseOrderMemo('paypal-desk demo | country=US | items=CAB-C2C*0'), null)
+  assert.equal(parseOrderMemo(undefined), null)
 })
