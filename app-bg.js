@@ -68,10 +68,10 @@ export async function syncOnce($, { inbox, now }) {
     invoices: await read('list_invoices', { page: 1, page_size: ROW_CAP, total_required: true }),
     disputes: await read('list_disputes', { page_size: ROW_CAP }),
     plans: await read('list_subscription_plans', { page: 1, page_size: ROW_CAP }),
+    // Transaction Search wants ISO 8601 date-times with seconds; a date alone is a 400.
     transactions: await read('list_transactions', {
-      start_date: isoDate(now - SERIES_DAYS * 86_400_000),
-      end_date: isoDate(now),
-      fields: 'all',
+      start_date: new Date(now - SERIES_DAYS * 86_400_000).toISOString(),
+      end_date: new Date(now).toISOString(),
       page_size: 500,
     }),
   }

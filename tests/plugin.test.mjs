@@ -207,6 +207,24 @@ test('syncOnce treats an isError "not found" answer as a tool the server does no
   assert.equal(world.state.value.summary.plansNote, 'Not offered by this PayPal connection')
 })
 
+test('syncOnce asks Transaction Search for a 30-day window of ISO 8601 date-times', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  let args
+  const call = world.$.mcp.call
+  world.$.mcp.call = async (server, tool, input) => {
+    if (tool === 'list_transactions') args = input
+    return call(server, tool, input)
+  }
+  await syncOnce(world.$, { now: NOW })
+  const withSeconds = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/
+  assert.match(args.start_date, withSeconds)
+  assert.match(args.end_date, withSeconds)
+  assert.equal(Date.parse(args.end_date) - Date.parse(args.start_date), 30 * 86_400_000)
+  assert.equal(Date.parse(args.end_date), NOW)
+  assert.ok(args.page_size <= 500)
+  assert.deepEqual(Object.keys(args).sort(), ['end_date', 'page_size', 'start_date'])
+})
+
 test('syncOnce without a connection publishes the error and keeps the lists', async () => {
   const world = fakeDollar({ answers: toolAnswers, connected: false })
   world.state.value = { invoices: [{ number: 'kept' }] }
