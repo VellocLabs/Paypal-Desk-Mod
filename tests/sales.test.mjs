@@ -5,31 +5,42 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { storeRow } from './fixtures.mjs'
+import { storeOrder as order, storeRow } from './fixtures.mjs'
+import { makeOrder } from '../lib/orders.js'
 import { change, compactDollars, latestOrders, lineCents, readStoreRow, salesBoard, windowTotals } from '../lib/sales.js'
 
-const order = args => readStoreRow(storeRow(args)).order
-
-test('only an invoice with a store memo is a store order, and only a paid one counts', () => {
-  assert.equal(readStoreRow({ id: 'INV2-X', status: 'PAID', detail: { memo: 'Thanks for your business' } }), null)
-  assert.equal(readStoreRow({ id: 'INV2-Y', status: 'SENT', detail: {} }), null)
+test('a paid invoice numbered PD-YYYYMMDD-NNN is a store order: PayPal gives amount and status, the order book the rest', () => {
+  assert.equal(readStoreRow({ invoice_id: 'INV2-X', invoice_number: '0001', status: 'PAID', amount: '10.00' }), null)
+  assert.equal(readStoreRow({ invoice_id: 'INV2-Y', invoice_number: 'PD-20261340-001', status: 'PAID', amount: '10.00' }), null)
   const unpaid = readStoreRow(storeRow({ date: '2026-11-05', value: '12.00', status: 'CANCELLED' }))
   assert.equal(unpaid.order, null)
   assert.match(unpaid.id, /^INV2-/)
-  const paid = order({ date: '2026-11-05', country: 'CA', lines: [['CHG-65W', 1], ['CAB-C2C', 2]], value: '59.00' })
+
+  const row = storeRow({ date: '2026-11-05', value: '59.00' })
+  const book = makeOrder(row.invoice_number, '2026-11-05')
+  const paid = readStoreRow(row).order
   assert.deepEqual(
-    { date: paid.date, country: paid.country, items: paid.items, cents: paid.cents, customer: paid.customer, refund: paid.refund },
-    { date: '2026-11-05', country: 'CA', items: [['CHG-65W', 1], ['CAB-C2C', 2]], cents: 5900, customer: 'Ada Lovelace', refund: null },
+    { id: paid.id, date: paid.date, country: paid.country, items: paid.items, cents: paid.cents, customer: paid.customer, buyer: paid.buyer, refund: paid.refund },
+    { id: row.invoice_id, date: '2026-11-05', country: book.country, items: book.lines.map(l => [l.sku, l.qty]), cents: 5900,
+      customer: `${book.buyer.first} ${book.buyer.last}`, buyer: book.buyer.email, refund: null },
   )
+  const nested = { id: row.invoice_id, status: 'MARKED_AS_PAID', detail: { invoice_number: row.invoice_number }, amount: { currency_code: 'USD', value: '59.00' } }
+  assert.deepEqual(readStoreRow(nested).order, paid, 'the REST row shape reads the same')
 })
 
-test('a refund is read from the memo of a paid order, a bare refund status is a full one, and none exceeds the order', () => {
-  const planned = { date: '2026-11-08', cents: 1200 }
-  assert.deepEqual(order({ date: '2026-11-05', value: '24.00', lines: [['CAB-C2C', 2]], refund: planned }).refund, { date: '2026-11-08', cents: 1200 })
-  assert.deepEqual(order({ date: '2026-11-05', value: '24.00', lines: [['CAB-C2C', 2]], refund: planned, status: 'MARKED_AS_REFUNDED' }).refund, { date: '2026-11-08', cents: 1200 })
-  assert.equal(order({ date: '2026-11-05', value: '24.00' }).refund, null)
-  assert.deepEqual(order({ date: '2026-11-05', value: '24.00', status: 'MARKED_AS_REFUNDED' }).refund, { date: '2026-11-05', cents: 2400 })
-  assert.deepEqual(order({ date: '2026-11-05', value: '10.00', refund: { date: '2026-11-06', cents: 9900 }, status: 'REFUNDED' }).refund, { date: '2026-11-06', cents: 1000 })
+test('a refund comes from the order book, never above the amount; a bare refund status is a full one on the order day', () => {
+  const row = storeRow({ date: '2026-11-05', value: '500.00', refunded: true })
+  const book = makeOrder(row.invoice_number, '2026-11-05')
+  assert.deepEqual(readStoreRow(row).order.refund, { date: book.refund.date, cents: book.refund.cents })
+  assert.equal(readStoreRow({ ...row, amount: '1.00' }).order.refund.cents, 100)
+  assert.equal(readStoreRow(storeRow({ date: '2026-11-05', value: '24.00' })).order.refund, null)
+  assert.deepEqual(readStoreRow(storeRow({ date: '2026-11-05', value: '24.00', status: 'MARKED_AS_REFUNDED' })).order.refund, { date: '2026-11-05', cents: 2400 })
+})
+
+test('an order shows as refunded only from the refund day on', () => {
+  const o = order({ date: '2026-11-03', value: '20.00', refund: { date: '2026-11-12', cents: 2000 } })
+  assert.equal(latestOrders([o], '2026-11-10')[0].status, 'Paid')
+  assert.equal(latestOrders([o], '2026-11-12')[0].status, 'Refunded')
 })
 
 test('line shares use catalog prices; an unknown SKU takes what is left', () => {
@@ -40,7 +51,7 @@ test('line shares use catalog prices; an unknown SKU takes what is left', () => 
 test('a window counts orders placed in it and refunds made in it, day by day', () => {
   const orders = [
     order({ date: '2026-11-03', value: '100.00' }),
-    order({ date: '2026-11-01', value: '50.00', refund: { date: '2026-11-04', cents: 5000 }, status: 'MARKED_AS_REFUNDED' }),
+    order({ date: '2026-11-01', value: '50.00', refund: { date: '2026-11-04', cents: 5000 } }),
     order({ date: '2026-11-04', value: '40.00', country: 'JP' }),
   ]
   const t = windowTotals(orders, '2026-11-03', '2026-11-05')
@@ -66,7 +77,7 @@ test('the board: last 7 days against the 7 before, 30-day totals, both ending ye
   const orders = [
     order({ date: '2026-11-09', value: '129.00', lines: [['AUD-BUDS', 1]], name: ['Mia', 'Clark'] }),
     order({ date: '2026-11-09', value: '24.00', lines: [['CAB-C2C', 2]], country: 'GB' }),
-    order({ date: '2026-11-03', value: '35.00', lines: [['CHG-65W', 1]], country: 'CA', refund: { date: '2026-11-06', cents: 3500 }, status: 'MARKED_AS_REFUNDED' }),
+    order({ date: '2026-11-03', value: '35.00', lines: [['CHG-65W', 1]], country: 'CA', refund: { date: '2026-11-06', cents: 3500 } }),
     order({ date: '2026-10-30', value: '100.00', lines: [['DSK-ARM', 1], ['CAB-C2C', 1]] }),
     order({ date: '2026-11-10', value: '999.00', lines: [['HUB-DOCK', 5]] }),
     order({ date: '2026-10-10', value: '12.00', lines: [['CAB-C2C', 1]], country: 'FR' }),
@@ -108,5 +119,5 @@ test('an empty store reads as empty, not as an error', () => {
   assert.equal(board.week.daily.length, 7)
   assert.deepEqual(board.month.products, [])
   assert.equal(board.salesNote, 'No store orders in the last 30 days.')
-  assert.deepEqual(latestOrders([]), [])
+  assert.deepEqual(latestOrders([], '2026-11-10'), [])
 })

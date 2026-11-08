@@ -9,9 +9,9 @@ The dashboard opens on the store's last 7 days (net sales, orders, average
 order value and refunds against the 7 days before, sales by country, daily
 sales, top products, latest orders); *Last 30 days* has the totals by
 country, by product and by product and country. The store's orders are the
-invoices whose memo starts with `paypal-desk demo`; the memo carries the
-buyer's country, the products and any refund, which the invoice list does
-not return.
+paid invoices numbered `PD-YYYYMMDD-NNN`: PayPal holds the amount, status and
+day; the buyer, country, products and any refund come from the store's order
+book (`lib/orders.js`), which the invoice list does not return.
 Speak of them as orders and sales, not as invoices.
 
 ## What you do

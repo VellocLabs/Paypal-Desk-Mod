@@ -1,20 +1,47 @@
-/** Invoice-list rows shaped as PayPal returns them, shared by the tests. */
-import { orderMemo } from '../lib/memo.js'
+/** Invoice-list rows and store orders, shared by the tests. */
+import { makeOrder, orderNumber } from '../lib/orders.js'
 
 let seq = 0
-/** An invoice-list row as PayPal returns it, for a store order. */
-export function storeRow({ date, country = 'US', lines = [['CAB-C2C', 1]], value, status = 'MARKED_AS_PAID', refund, name = ['Ada', 'Lovelace'], email }) {
+const lastIndex = new Map()
+
+/**
+ * A store order's row as PayPal's MCP invoice list returns it (flat, no memo).
+ * Its number is the next on `date` whose order-book entry has a refund when
+ * `refunded`, and none otherwise, so a test knows which it gets.
+ */
+export function storeRow({ date, value, status = 'MARKED_AS_PAID', refunded = false }) {
+  let index = lastIndex.get(date) ?? 0
+  let number
+  do {
+    index += 1
+    number = orderNumber(date, index)
+  } while (Boolean(makeOrder(number, date).refund) !== refunded)
+  lastIndex.set(date, index)
   seq += 1
-  const number = `PD-${date.replaceAll('-', '')}-${String(seq).padStart(3, '0')}`
+  return {
+    invoice_id: `INV2-${seq}`,
+    invoice_number: number,
+    status,
+    amount: value,
+    currency_code: 'USD',
+    due_amount: /PAID|REFUND/.test(status) ? '0.00' : value,
+    created_date: `${date}T12:00:00Z`,
+    due_date: date,
+  }
+}
+
+/** A store order as the sales board reads it, with the content given. */
+export function storeOrder({ date, country = 'US', lines = [['CAB-C2C', 1]], value, refund = null, name = ['Ada', 'Lovelace'] }) {
+  seq += 1
   return {
     id: `INV2-${seq}`,
-    status,
-    detail: {
-      invoice_number: number,
-      invoice_date: date,
-      memo: orderMemo({ country, lines: lines.map(([sku, qty]) => ({ sku, qty })), refund }),
-    },
-    primary_recipients: [{ billing_info: { name: { given_name: name[0], surname: name[1] }, email_address: email ?? `${name[0].toLowerCase()}${seq}@example.com` } }],
-    amount: { currency_code: 'USD', value },
+    number: orderNumber(date, seq % 1000),
+    date,
+    country,
+    items: lines,
+    cents: Math.round(Number(value) * 100),
+    customer: name.join(' '),
+    buyer: `${name[0].toLowerCase()}${seq}@example.com`,
+    refund,
   }
 }

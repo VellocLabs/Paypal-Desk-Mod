@@ -34,11 +34,13 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   has the totals by country, by product and by product and country. Then
   Cases and Disputes. The agent can reshape it on request ("show refunds by
   week") by editing the file and rebuilding.
-- **Store orders**: an order is an invoice whose memo starts with
-  `paypal-desk demo` and carries the buyer's country and the products
-  (`lib/memo.js`), since PayPal's invoice list returns neither. The module
-  keeps 62 days of them in its store, reads only the newest pages on each
-  sync and every page once an hour (`lib/sales.js` does the figures).
+- **Store orders**: an order is a paid invoice numbered `PD-YYYYMMDD-NNN`.
+  PayPal gives its amount, status and day; the store's order book
+  (`lib/orders.js`) gives the buyer, country, products and any refund, which
+  follow from the number alone, since PayPal's MCP invoice list returns a
+  flat row with no memo, items or recipient. The module keeps 62 days of
+  orders in its store, reads only the newest pages on each sync and every
+  page once an hour (`lib/sales.js` does the figures).
 - **Cases**: open disputes with their response deadline, overdue invoices,
   a refund spike, two payments that look like one, a new request file in
   the inbox folder.
@@ -84,9 +86,9 @@ monthly plan.
 
 The store's order history is a second script: 2,500 orders of a 33-product
 accessories store from Oct 1 to Nov 7, each recorded as a paid invoice on its
-own date, newest day first. A refunded order keeps its refund (date and
-amount) in the memo; no refund is recorded on PayPal (see *Known PayPal
-issue*). It takes about an hour and can
+own date, newest day first. The memo repeats the order for a person reading
+the invoice; a refund stays in the order book and the memo, and is not
+recorded on PayPal (see *Known PayPal issues*). It takes about an hour and can
 be stopped and run again; `--dry-run` prints the plan and calls nothing.
 
 ```bash
@@ -97,7 +99,9 @@ PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:orders -- --from 2026
 The dashboard's windows end yesterday, so before a demo add the days since
 the last run with `--from`/`--to`.
 
-### Known PayPal issue: refunded invoices empty the list
+### Known PayPal issues
+
+**Refunded invoices empty the list.**
 
 PayPal's MCP server checks each answer against its own output schema before
 sending it, and `list_invoices`' schema lists no `MARKED_AS_REFUNDED` or
@@ -107,13 +111,20 @@ invoices[30].status`). The desk reads a refused page again in pages of 10, 5
 and 1 and skips only what is still refused, within 300 extra calls a sync;
 the sync note counts what it could not read. Sandbox data seeded before the
 seeder stopped recording refunds can be repaired: this deletes the recorded
-refunds of the store's invoices, which then read as paid with the refund in
-the memo.
+refunds of the store's invoices, which then read as paid; the board takes
+their refunds from the order book.
 
 ```bash
 PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run undo-refunds -- --dry-run
 PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run undo-refunds
-``` For a dispute: send money from your sandbox personal account
+```
+
+**The list's rows carry no memo.** `list_invoices` on PayPal's MCP server
+answers flat rows (`invoice_id`, `invoice_number`, `status`, `amount` as a
+string, `due_date`, `created_date`) without the memo, items or bill-to that
+the REST API returns, and the server offers no tool that reads one invoice.
+So the store's order content cannot travel on PayPal; the desk reads it from
+the order book by the invoice number. For a dispute: send money from your sandbox personal account
 to the business account, copy the transaction id, and run
 `npm run seed -- --chargeback <id>`; the sandbox-only chargeback endpoint
 opens a dispute on it. Transaction Search shows new payments only after a
@@ -137,7 +148,7 @@ few hours, so seed early.
 .claude-plugin/plugin.json      the manifest: the app, its background module, the inbox folder
 .mcp.json                       PayPal's sandbox MCP server (OAuth, no stored secret)
 app-bg.js                       the background module
-lib/                            the catalog, the order memo, dates, the sales board
+lib/                            the catalog, the order book, the order memo, dates, the sales board
 app/                            the seed: app.a2ui, AGENTS.md, data/state.json
 hooks/guard.js                  the confirmation gate on PayPal writes
 skills/paypal-rules/SKILL.md    operating rules and the tool map

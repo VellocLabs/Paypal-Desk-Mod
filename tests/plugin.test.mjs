@@ -13,8 +13,7 @@ import {
   FULL_SCAN_MS, KEEP_DAYS, MAX_PAGE_NUMBER, ORDERS_KEY, PAGE_SIZE, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
 } from '../app-bg.js'
-import { readStoreRow } from '../lib/sales.js'
-import { storeRow } from './fixtures.mjs'
+import { storeOrder, storeRow } from './fixtures.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const readJson = path => JSON.parse(readFileSync(join(root, path), 'utf8'))
@@ -88,21 +87,25 @@ test('resultJson prefers structured content, then parses text, then keeps text',
 })
 
 const overdueRows = [
-  { id: 'INV2-A', status: 'SENT', amount: { currency_code: 'USD', value: '120.00' },
-    detail: { invoice_number: '0001', payment_term: { due_date: day(-20).slice(0, 10) } },
-    primary_recipients: [{ billing_info: { name: { given_name: 'Ada', surname: 'Lovelace' }, email_address: 'ada@example.com' } }] },
+  { invoice_id: 'INV2-A', invoice_number: '0001', status: 'SENT', amount: '120.00', currency_code: 'USD', due_amount: '120.00',
+    due_date: day(-20).slice(0, 10) },
   { id: 'INV2-B', status: 'SENT', amount: { currency_code: 'USD', value: '80.00' },
     detail: { invoice_number: '0002', payment_term: { due_date: day(-3).slice(0, 10) } },
     primary_recipients: [{ billing_info: { email_address: 'bob@example.com' } }] },
-  { id: 'INV2-C', status: 'PAID', amount: { currency_code: 'USD', value: '50.00' },
-    detail: { invoice_number: '0003', payment_term: { due_date: day(-30).slice(0, 10) } } },
+  { invoice_id: 'INV2-C', invoice_number: '0003', status: 'PAID', amount: '50.00', currency_code: 'USD', due_amount: '0.00',
+    due_date: day(-30).slice(0, 10) },
 ]
 
 /** This week's store orders: $200 of sales and a $60 refund, so refunds are 30% of sales. */
+const storeOrders = [
+  storeOrder({ date: '2026-11-08', value: '100.00', lines: [['CHG-65W', 2], ['DSK-CABLE', 2]] }),
+  storeOrder({ date: '2026-11-07', value: '100.00', lines: [['DSK-ARM', 1], ['PHN-GLASS', 1]], country: 'DE',
+    refund: { date: '2026-11-08', cents: 6000 } }),
+]
+/** The invoice list's store rows: two paid orders this week, $200, no refund in the order book. */
 const storeRows = [
-  storeRow({ date: '2026-11-08', value: '100.00', lines: [['CHG-65W', 2], ['DSK-CABLE', 2]] }),
-  storeRow({ date: '2026-11-07', value: '100.00', lines: [['DSK-ARM', 1], ['PHN-GLASS', 1]], country: 'DE',
-    refund: { date: '2026-11-08', cents: 6000 }, status: 'MARKED_AS_REFUNDED' }),
+  storeRow({ date: '2026-11-08', value: '100.00' }),
+  storeRow({ date: '2026-11-07', value: '100.00' }),
 ]
 
 const raw = {
@@ -118,7 +121,6 @@ const raw = {
   ] },
 }
 
-const storeOrders = storeRows.map(row => readStoreRow(row).order)
 const openInvoices = normalizeInvoices(overdueRows.filter(r => r.status === 'SENT'), NOW)
 
 test('deriveState turns the reads into the sales board and cases, most urgent first', () => {
@@ -178,7 +180,7 @@ function manyRows(count) {
 function pagesOf(rows, refused = new Set()) {
   return ({ page = 1, page_size: size = PAGE_SIZE }) => {
     const items = rows.slice((page - 1) * size, page * size)
-    const bad = items.findIndex(r => refused.has(r.id))
+    const bad = items.findIndex(r => refused.has(r.invoice_id))
     if (bad >= 0) {
       return { __error: `MCP error -32602: Output validation error: Invalid structured content for tool list_invoices: Invalid enum value. Expected 'DRAFT' | 'SENT' | 'PAID', received 'MARKED_AS_REFUNDED' at invoices[${bad}].status` }
     }
@@ -241,7 +243,8 @@ const toolAnswers = {
 test('syncOnce publishes the board and copies new inbox files into the app folder', async () => {
   const world = fakeDollar({ answers: toolAnswers, files: ['orders.csv', 'photo.png'] })
   await syncOnce(world.$, { inbox: '/home/me/Documents/paypal-desk/inbox', now: NOW })
-  assert.equal(world.state.value.week.kpis.net.value, '$140')
+  assert.equal(world.state.value.week.kpis.net.value, '$200')
+  assert.equal(world.state.value.week.latest.length, 2)
   assert.ok(world.state.value.cases.some(c => c.id === 'invoice:INV2-A'))
   assert.deepEqual(Object.keys(world.written), ['inbox/orders.csv'])
   assert.ok(world.state.value.cases.some(c => c.id === 'file:orders.csv'))
@@ -273,7 +276,7 @@ test('the first sync reads every invoice page; later ones stop at a page with no
   assert.equal(world.state.value.month.kpis.orders.value, '250')
 
   world.calls.length = 0
-  rows.unshift(storeRow({ date: day(-1).slice(0, 10), value: '25.00', lines: [['PHN-CASE', 1]] }))
+  rows.unshift(storeRow({ date: day(-1).slice(0, 10), value: '25.00' }))
   await syncOnce(world.$, { now: NOW + 5 * 60_000 })
   assert.deepEqual(pages(), [1, 2], 'page 1 brought a new order, page 2 nothing new')
   assert.equal(world.state.value.month.kpis.orders.value, '251')
@@ -291,17 +294,17 @@ test('a full read each hour sees a refund on an old page and drops a deleted inv
   rows[149] = { ...last, status: 'MARKED_AS_REFUNDED' }
   const gone = rows.splice(120, 1)[0]
   await syncOnce(world.$, { now: NOW + 5 * 60_000 })
-  assert.equal(world.store[ORDERS_KEY].orders[last.id].refund, null, 'not seen before the hour is up')
+  assert.equal(world.store[ORDERS_KEY].orders[last.invoice_id].refund, null, 'not seen before the hour is up')
   await syncOnce(world.$, { now: NOW + FULL_SCAN_MS })
   const cached = world.store[ORDERS_KEY].orders
-  assert.deepEqual(cached[last.id].refund, { date: last.detail.invoice_date, cents: 1200 })
-  assert.equal(cached[gone.id], undefined)
+  assert.deepEqual(cached[last.invoice_id].refund, { date: last.due_date, cents: 1200 })
+  assert.equal(cached[gone.invoice_id], undefined)
   assert.equal(Object.keys(cached).length, 149)
 })
 
 test("a page PayPal's server refuses is read again in smaller pages, and only the refused invoice is lost", async () => {
   const rows = manyRows(150)
-  const world = fakeDollar({ answers: { ...toolAnswers, list_invoices: pagesOf(rows, new Set([rows[37].id])) } })
+  const world = fakeDollar({ answers: { ...toolAnswers, list_invoices: pagesOf(rows, new Set([rows[37].invoice_id])) } })
   await syncOnce(world.$, { now: NOW })
   const reads = world.calls.filter(c => c.tool === 'list_invoices').map(c => `${c.args.page_size}:${c.args.page}`)
   assert.deepEqual(reads, [
@@ -314,7 +317,7 @@ test("a page PayPal's server refuses is read again in smaller pages, and only th
   ])
   const cached = world.store[ORDERS_KEY]
   assert.equal(Object.keys(cached.orders).length, 149)
-  assert.equal(cached.orders[rows[37].id], undefined)
+  assert.equal(cached.orders[rows[37].invoice_id], undefined)
   assert.equal(cached.unread, 1)
   assert.equal(world.state.value.sync.ok, true)
   assert.equal(world.state.value.sync.unread, 1)
@@ -326,9 +329,9 @@ test('an order PayPal stops sending is kept, not dropped as deleted', async () =
   const refused = new Set()
   const world = fakeDollar({ answers: { ...toolAnswers, list_invoices: pagesOf(rows, refused) } })
   await syncOnce(world.$, { now: NOW })
-  refused.add(rows[5].id)
+  refused.add(rows[5].invoice_id)
   await syncOnce(world.$, { now: NOW + FULL_SCAN_MS })
-  assert.ok(world.store[ORDERS_KEY].orders[rows[5].id], 'still cached')
+  assert.ok(world.store[ORDERS_KEY].orders[rows[5].invoice_id], 'still cached')
   assert.equal(Object.keys(world.store[ORDERS_KEY].orders).length, 120)
   assert.equal(world.store[ORDERS_KEY].fullAt, NOW + FULL_SCAN_MS)
 })
@@ -366,7 +369,7 @@ test('a failed invoice read keeps the cached orders and retries the full read', 
   await syncOnce(world.$, { now: NOW + FULL_SCAN_MS })
   assert.equal(world.state.value.sync.ok, false)
   assert.match(world.state.value.sync.note, /list_invoices/)
-  assert.equal(world.state.value.week.kpis.net.value, '$140')
+  assert.equal(world.state.value.week.kpis.net.value, '$200')
   assert.equal(world.store[ORDERS_KEY].fullAt, NOW, 'the full read is still due')
   assert.equal(invoiceReads, 1, 'an ordinary error is not read again in smaller pages')
 })
@@ -375,7 +378,7 @@ test('orders older than the kept window are not cached', async () => {
   const old = storeRow({ date: day(-(KEEP_DAYS + 1)).slice(0, 10), value: '12.00' })
   const world = fakeDollar({ answers: { ...toolAnswers, list_invoices: pagesOf([...storeRows, old]) } })
   await syncOnce(world.$, { now: NOW })
-  assert.equal(world.store[ORDERS_KEY].orders[old.id], undefined)
+  assert.equal(world.store[ORDERS_KEY].orders[old.invoice_id], undefined)
   assert.equal(Object.keys(world.store[ORDERS_KEY].orders).length, 2)
 })
 
@@ -431,7 +434,7 @@ test('app.start returns before the first sync ends and arms the timer; app.stop 
   assert.equal(period, 5 * 60_000)
   release()
   await whenIdle()
-  assert.equal(world.state.value.week.kpis.net.value, '$140')
+  assert.equal(world.state.value.week.kpis.net.value, '$200')
   await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
   assert.equal(cancelled, 1)
 })

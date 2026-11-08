@@ -2,7 +2,7 @@
  * The PayPal Desk background module. One resident worker per Velloc: on a
  * timer it reads the merchant's invoices, disputes and recent transactions
  * through the plugin's PayPal MCP server, keeps the store's orders (the
- * invoices whose memo carries a store order) in its store, derives the sales
+ * paid invoices numbered `PD-YYYYMMDD-NNN`) in its store, derives the sales
  * board and the open cases, and copies invoice requests dropped into the
  * declared inbox folder into the app's folder for the session agent.
  *
@@ -14,7 +14,7 @@
  * still a handful of patches.
  */
 import { addDays, dateOf } from './lib/dates.js'
-import { readStoreRow, salesBoard } from './lib/sales.js'
+import { invoiceRowFields, readStoreRow, salesBoard } from './lib/sales.js'
 
 export const POLL_MS = 5 * 60_000
 export const SERVER = 'paypal'
@@ -155,24 +155,25 @@ export async function scanInvoices($, { now, errors, unavailable = [] }) {
     const items = rows.items
     let pageChanged = false
     for (const row of items) {
-      if (!row.id) continue
-      seen.add(row.id)
+      const id = invoiceRowFields(row).id
+      if (!id) continue
+      seen.add(id)
       const store = readStoreRow(row)
       if (store) {
-        if (open[row.id]) { delete open[row.id]; pageChanged = true }
+        if (open[id]) { delete open[id]; pageChanged = true }
         if (!store.order || store.order.date < cutoff) {
-          if (orders[row.id]) { delete orders[row.id]; pageChanged = true }
-        } else if (JSON.stringify(orders[row.id]) !== JSON.stringify(store.order)) {
-          orders[row.id] = store.order
+          if (orders[id]) { delete orders[id]; pageChanged = true }
+        } else if (JSON.stringify(orders[id]) !== JSON.stringify(store.order)) {
+          orders[id] = store.order
           pageChanged = true
         }
         continue
       }
       const [invoice] = normalizeInvoices([row], now)
       if (invoice.outstanding) {
-        if (JSON.stringify(open[row.id]) !== JSON.stringify(row)) { open[row.id] = row; pageChanged = true }
-      } else if (open[row.id]) {
-        delete open[row.id]
+        if (JSON.stringify(open[id]) !== JSON.stringify(row)) { open[id] = row; pageChanged = true }
+      } else if (open[id]) {
+        delete open[id]
         pageChanged = true
       }
     }
@@ -367,25 +368,27 @@ function emptyState(previous) {
   }
 }
 
+/** Invoice-list rows, flat (MCP) or nested (REST), as the fields the cases use. */
 export function normalizeInvoices(value, now) {
   const items = listItems(value, ['items', 'invoices'])
   return items.map(inv => {
+    const fields = invoiceRowFields(inv)
     const detail = inv.detail || {}
     const term = detail.payment_term || {}
     const recipient = (inv.primary_recipients || [])[0]
     const billing = (recipient && recipient.billing_info) || {}
     const name = billing.name ? [billing.name.given_name, billing.name.surname].filter(Boolean).join(' ') : ''
-    const due = term.due_date || detail.due_date || ''
+    const due = term.due_date || detail.due_date || inv.due_date || ''
     const status = String(inv.status || '').toUpperCase()
     const outstanding = status === 'SENT' || status === 'UNPAID' || status === 'PARTIALLY_PAID' || status === 'PAYMENT_PENDING'
     const overdueDays = outstanding && due ? Math.floor((now - Date.parse(due)) / 86_400_000) : 0
     return {
-      id: inv.id || '',
-      number: detail.invoice_number || inv.id || '',
+      id: fields.id,
+      number: fields.number || fields.id,
       recipient: name || billing.email_address || '',
-      amount: money(inv.amount || (inv.due_amount) || {}),
-      value: Number((inv.amount && inv.amount.value) || 0),
-      currency: (inv.amount && inv.amount.currency_code) || detail.currency_code || '',
+      amount: money({ value: fields.value, currency_code: fields.currency }),
+      value: fields.value,
+      currency: fields.currency,
       status,
       due,
       outstanding,
@@ -457,7 +460,7 @@ export function deriveCases({ invoices, disputes, transactions, refundShare = 0,
       id: `invoice:${inv.id}`,
       kind: 'overdue_invoice',
       title: `Invoice ${inv.number} is ${inv.overdueDays} day(s) overdue`,
-      detail: `${inv.amount} from ${inv.recipient || 'the recipient'}, due ${inv.due.slice(0, 10)}. A reminder or a cancellation needs your decision.`,
+      detail: `${inv.amount}${inv.recipient ? ` from ${inv.recipient}` : ''}, due ${inv.due.slice(0, 10)}. A reminder or a cancellation needs your decision.`,
       tone: inv.overdueDays > 14 ? 'danger' : 'warning',
       label: inv.overdueDays > 14 ? 'Long overdue' : 'Overdue',
       since: Date.parse(inv.due) || now,
