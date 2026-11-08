@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeOrder, orderDateOf, orderNumber } from '../lib/orders.js'
 import { captureOf, checkoutBody, dailyCount, dueRefunds, refundBody } from './lib/payments.mjs'
-import { createClient } from './lib/rest.mjs'
+import { ApiError, createClient } from './lib/rest.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const journalPath = join(root, '.seed', 'payments.json')
@@ -60,7 +60,7 @@ const client = createClient({ clientId, clientSecret, rpm })
 
 if (args.check) {
   await check()
-  process.exit(0)
+  process.exit(process.exitCode ?? 0)
 }
 
 let paid = 0
@@ -132,7 +132,15 @@ async function check() {
   const end = new Date()
   const start = new Date(end.getTime() - 2 * 86_400_000)
   const query = `start_date=${start.toISOString().slice(0, 19)}Z&end_date=${end.toISOString().slice(0, 19)}Z&fields=all&page_size=20`
-  const list = await client.request('GET', `/v1/reporting/transactions?${query}`)
+  let list
+  try {
+    list = await client.request('GET', `/v1/reporting/transactions?${query}`)
+  } catch (err) {
+    if (!(err instanceof ApiError && err.status === 403)) throw err
+    console.error(`Transaction Search refused this REST app (403 NOT_AUTHORIZED): turn on "Transaction search" in the app's features on developer.paypal.com. The dashboard reads transactions through the MCP server, which does not need it.`)
+    process.exitCode = 1
+    return
+  }
   const rows = list.transaction_details ?? []
   console.log(`Transaction Search, last 2 days: ${list.total_items ?? rows.length} transaction(s).`)
   for (const t of rows.slice(0, 5)) {
