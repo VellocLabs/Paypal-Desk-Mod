@@ -22,7 +22,7 @@ Speak of them as orders and sales, not as invoices.
 
 - **Work a to-do.** The *Actions* tab opens on the action list, the open
   to-dos (the `cases` field): open disputes, overdue invoices, inbox
-  requests, duplicate payments and tripped alerts. *Ask AI* on one writes a
+  requests, duplicate payments and triggered alerts. *Ask AI* on one writes a
   question into the chat box, such as "Work this case (dispute:PP-D-1): …"
   or, for an alert, "The alert … reads …"; the person may edit it before
   sending. Find the row by its id in
@@ -77,7 +77,7 @@ Every alert works the same way. Follow this section rather than inventing a
 variant for one alert.
 
 **What an alert is.** A condition the desk watches by itself; when it is
-true the alert has *tripped*. Alerts come from two sources and look alike:
+true the alert has *triggered*. Alerts come from two sources and look alike:
 
 - *From PayPal*: each dispute, open or resolved in the last 30 days. The
   module reads them from PayPal. You cannot add, change or delete one; it
@@ -91,11 +91,12 @@ the *Alerts* heading with *Add alert with AI*, then the alerts as cards in
 a grid, as many columns as fit: PayPal's first, then the rules. Every card
 has the same parts, top to bottom:
 
-1. The title, then a status badge: *Tripped* (amber), *OK* (green) or
+1. The title, then a status badge: *Triggered* (amber), *OK* (green) or
    *Can't check* (grey) for a rule; for a dispute, what the merchant must
    do and how soon (red when 3 days or less remain).
-2. One caption line: the rule in words (or the dispute id and the day it
-   was opened), then who set it.
+2. One caption line: the rule in words, or the dispute id and the day it
+   was opened. Nothing else: the section already says where alerts come
+   from.
 3. The figure: what it reads (the store, a product, a country), the value,
    and its change on the week before, green or red by whether that
    direction is good.
@@ -116,22 +117,22 @@ product's refunds go above 10%", "warn me if weekly sales drop under
 $20k"). Turn the request into rules in `data/alerts.json`, one rule per
 thing watched, and say back in one sentence what each rule watches. The
 card appears within seconds with its current figure; tell the person
-whether it is tripped right now. Ask for a figure only if the request has
+whether it is triggered right now. Ask for a figure only if the request has
 none and no sensible default fits (refund rate up 1.5 pts, a product's
 refund rate above 10%, sales down 20%). Asked for something no rule can
 express, say what the desk can watch and offer the nearest rule. Writing
 the file replaces the built-in rule, so copy it into the file unless the
 person asked to drop it.
 
-**How it trips.** The module checks every rule on each sync (every 5
+**When it triggers.** The module checks every rule on each sync (every 5
 minutes), and within about 10 seconds of `data/alerts.json` or
 `data/findings.json` changing. A rule reads the last 7 days, ending
-yesterday, against the 7 before. When it trips, three things happen: the
-card turns *Tripped*, a to-do "<name> tripped" joins the action list, and
+yesterday, against the 7 before. When it triggers, three things happen: the
+card turns *Triggered*, a to-do "<name> triggered" joins the action list, and
 the module starts an agent run in this folder to analyze it, once per
 alert and week, again after 6 hours if that run wrote no finding.
 
-**Analyze.** In that run, or in chat when a tripped alert's `analysis` is
+**Analyze.** In that run, or in chat when a triggered alert's `analysis` is
 still `pending`, analyze it as for *Explain a change*. For a sales, orders
 or units alert, use `trends` and `week` in `data/state.json`, and
 `data/refunds.json` for the orders. Write a finding with the alert's `id`
@@ -161,9 +162,9 @@ Then say in one sentence what you removed. The card and its to-do leave
 the board within seconds. A dispute cannot be deleted: say so, and offer
 to mark its to-do done.
 
-**Mark done.** *Mark done* acts on a to-do, not on the alert. On a tripped
+**Mark done.** *Mark done* acts on a to-do, not on the alert. On a triggered
 alert's to-do it hides the to-do for 7 days; the card still shows
-*Tripped* while the condition holds, and the to-do comes back after the 7
+*Triggered* while the condition holds, and the to-do comes back after the 7
 days if it still does. To stop watching something, delete the alert.
 
 ## Rules
@@ -199,14 +200,13 @@ Every rule reads the last 7 days (ending yesterday) against the 7 before.
 | `id` | Short, lowercase, unique |
 | `name` | The card's title |
 | `metric` | `refund_rate` (percent of sales refunded), `net_sales` (dollars, refunds taken off), `orders`, `units` (units sold) or `aov` (average order value, dollars) |
-| `scope` | `store` (default), `product` with `sku` (a catalog SKU, see `lib/catalog.js`), `any_product` (trips when any product does; the card shows that product), or `country` with `country` (ISO code, e.g. `CA`). `aov` takes `store` or `country` |
+| `scope` | `store` (default), `product` with `sku` (a catalog SKU, see `lib/catalog.js`), `any_product` (triggers when any product does; the card shows that product), or `country` with `country` (ISO code, e.g. `CA`). `aov` takes `store` or `country` |
 | `above`, `below` | Bounds on the week's figure, in the metric's unit |
 | `riseAbove`, `dropAbove` | Bounds on its change from the week before: points for `refund_rate`, percent otherwise |
 | `minOrders` | For `any_product` refund rates: products with fewer orders in the week are skipped; default 10 |
 
-Give at least one bound; the rule trips when any of them does. A rule the
-desk cannot read shows as *Can't check*: fix it. `source` is not yours to
-write.
+Give at least one bound; the rule triggers when any of them does. A rule the
+desk cannot read shows as *Can't check*: fix it.
 
 `data/findings.json`, newest anywhere (the board sorts by `at`):
 
@@ -243,8 +243,8 @@ missing.
 | `week.refundsNote` | The Refunds card subtitle |
 | `week.ask.net`, `.orders`, `.aov`, `.refunds`, `.all` | What a card's *Ask AI to analyze*, and the week's *Ask AI to analyze all changes*, draft in the composer |
 | `needs` | The first three `cases` |
-| `alerts` | The rule cards: `{id, name, rule, summary, subject, value, delta, trend, better, reading, week, source, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `status` is `Tripped`, `OK` or `Can't check`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
-| `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, source, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
+| `alerts` | The rule cards: `{id, name, rule, summary, subject, value, delta, trend, better, reading, week, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `status` is `Triggered`, `OK` or `Can't check`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
+| `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | Subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it), and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |

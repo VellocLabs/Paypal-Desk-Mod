@@ -85,8 +85,8 @@ test('disputes are alert cards: open ones first, a near deadline in red, resolve
     ['PP-D-3', 'Refund not received', 'Resolved', 'success'],
   ])
   const first = cards[0]
-  assert.deepEqual([first.rule, first.value, first.delta, first.source, first.note], ['Dispute PP-D-1 · opened Nov 5', '$45.00', 'Respond by Nov 12', 'From PayPal', 'On transaction 9AB'])
+  assert.deepEqual([first.rule, first.value, first.delta, first.note], ['Dispute PP-D-1 · opened Nov 5', '$45.00', 'Respond by Nov 12', 'On transaction 9AB'])
   assert.match(first.ask, /^Work this case \(dispute:PP-D-1\)/)
   assert.equal(cards[1].rule, 'Chargeback PP-D-2 · opened Nov 2')
-  assert.equal(first.summary, 'Dispute PP-D-1 · opened Nov 5 · From PayPal')
+  assert.equal(first.summary, 'Dispute PP-D-1 · opened Nov 5')
 })

@@ -258,11 +258,11 @@ export async function startAnalysis($, alerts, now, onDone) {
   return { run }
 }
 
-/** What the agent is asked when an alert trips. */
+/** What the agent is asked when an alert triggers. */
 export function analysisPrompt(a) {
   return [
-    `The alert "${a.name}" tripped for the week ${a.week}: ${a.rule}; it reads ${a.reading}.`,
-    'Analyze it as AGENTS.md says under "Analyze a tripped alert": find what drives it and whether it is one product, one country or the whole store.',
+    `The alert "${a.name}" triggered for the week ${a.week}: ${a.rule}; it reads ${a.reading}.`,
+    'Analyze it as the Alerts section of AGENTS.md says under "Analyze": find what drives it and whether it is one product, one country or the whole store.',
     `Then add one finding to data/findings.json with "alertId": "${a.id}" and "week": "${a.week}", keeping the findings already there.`,
     'Change nothing on PayPal. End with the title of the finding.',
   ].join(' ')
@@ -607,7 +607,7 @@ export function alertTodos(alerts, findings, now) {
     return {
       id: `alert:${a.id}`,
       kind: 'alert',
-      title: `${a.name} tripped`,
+      title: `${a.name} triggered`,
       detail: `${sentenceCase(a.reading)}. ${analysis}`,
       tone: 'warning',
       label: 'Alert',
@@ -631,9 +631,6 @@ function latestFinding(findings, a) {
 
 const sentenceCase = text => (text ? text[0].toUpperCase() + text.slice(1) : '')
 
-/** Who set an alert, as its card says. */
-const SOURCES = { rule: 'Added with AI', default: 'Built in' }
-
 /** Checked rules as alert cards; a tripped one says whether this week's analysis is in, running or pending. */
 export function viewAlerts(checked, findings, running = null) {
   return checked.map(a => alertWithStatus({
@@ -647,8 +644,7 @@ export function viewAlerts(checked, findings, running = null) {
     better: a.better,
     reading: a.reading,
     week: a.week || '',
-    source: SOURCES[a.source] || SOURCES.rule,
-    summary: `${a.rule} · ${SOURCES[a.source] || SOURCES.rule}`,
+    summary: a.rule,
     tripped: a.tripped,
     understood: a.understood,
     ask: a.understood
@@ -668,7 +664,7 @@ export function alertWithStatus(row, findings, running) {
   const finding = row.tripped ? latestFinding(findings, row) : null
   const busy = Boolean(row.tripped && !finding && running && running.id === row.id && running.week === row.week)
   const analysis = !row.tripped ? '' : finding ? 'analyzed' : busy ? 'analyzing' : 'pending'
-  const status = !row.understood ? "Can't check" : row.tripped ? 'Tripped' : 'OK'
+  const status = !row.understood ? "Can't check" : row.tripped ? 'Triggered' : 'OK'
   const note = !row.understood ? 'Ask the AI to restate it as a rule this desk can check'
     : finding ? `AI: ${[finding.title, finding.conclusion].filter(Boolean).join('. ')}`
       : analysis === 'analyzing' ? 'The AI is analyzing it…'
