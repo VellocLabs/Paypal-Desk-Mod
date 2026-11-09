@@ -39,13 +39,17 @@ Speak of them as orders and sales, not as invoices.
   and the merchant must answer by the response date or lose it. It is not
   a return request; a return may be one way to settle it. A chargeback is
   the same complaint made through the buyer's card issuer.
-- **Mark a to-do done.** *Mark done* on the board hides a to-do for 7 days;
-  if it is still true after them, it comes back. When the person asks you
-  to close one, add `{"id": "<its id>", "at": "YYYY-MM-DD"}` (today) to
-  `data/handled.json`, a JSON array; create the file if missing and keep
-  the entries in it. A bare id string hides it for good: use that only when
-  asked to. A dispute that PayPal shows as resolved or an invoice that is
-  paid disappears on its own.
+- **Mark a to-do done.** *Mark done* on the board moves a to-do from the
+  open list to the done list below it, with a green *✓ Done* badge, for 7
+  days; if it is still true after them, it is open again. A done to-do's
+  *⋯* menu has *Undo* (open again now, as it was) and *Delete* (off the
+  board for the rest of the 7 days). The board does all three itself. When
+  the person asks you to close one, add `{"id": "<its id>", "at":
+  "YYYY-MM-DD"}` (today) to `data/handled.json`, a JSON array; create the
+  file if missing and keep the entries in it. To reopen one, remove its
+  entry. A bare id string hides it for good: use that only when asked to.
+  A dispute that PayPal shows as resolved or an invoice that is paid
+  disappears on its own.
 - **Draft from the inbox.** An `invoice_request` case names a file under
   `inbox/`. Read it, build the invoice with `create_invoice` (one line item per
   row or request, the recipient's name and email, a due date), show the person
@@ -165,9 +169,10 @@ the board within seconds. A dispute cannot be deleted: say so, and offer
 to mark its to-do done.
 
 **Mark done.** *Mark done* acts on a to-do, not on the alert. On a triggered
-alert's to-do it hides the to-do for 7 days; the card still shows
-*Triggered* while the condition holds, and the to-do comes back after the 7
-days if it still does. To stop watching something, delete the alert.
+alert's to-do it moves the to-do to the done list for 7 days (*Undo* in its
+*⋯* menu reopens it); the card still shows *Triggered* while the condition
+holds, and the to-do is open again after the 7 days if it still does. To
+stop watching something, delete the alert.
 
 ## Rules
 
@@ -250,6 +255,7 @@ missing.
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it), and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
+| `doneCases` | The done list, latest first: `{id, title, detail, kind, doneLabel}` (`doneLabel` is "✓ Done Nov 9") |
 | `cases` | The open to-dos, most urgent first: `{id, kind, title, detail, tone, label, since, ref, ask}`; `kind` is `dispute`, `overdue_invoice`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |
 

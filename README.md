@@ -49,7 +49,9 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   deadline, overdue invoices, two payments that look like one, a new
   request file in the inbox folder, and every alert that tripped, with the
   AI's conclusion. *Ask AI* drafts a question about one in the chat box;
-  *Mark done* hides it for 7 days, and it comes back if it is still true.
+  *Mark done* moves it to a done list with a green check for 7 days, and
+  it opens again if it is still true; a done one's ⋯ menu can undo it or
+  delete it.
   Below it, the alerts, one card each: PayPal's disputes, and the rules you
   set by asking the AI (a product's refund rate above 10%, weekly sales
   under a floor, a country's orders dropping); the dashed plus card at the

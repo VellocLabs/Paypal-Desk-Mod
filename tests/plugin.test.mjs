@@ -10,7 +10,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { describeCall, isWriteTool, register as registerGuard } from '../hooks/guard.js'
 import {
-  DONE_DAYS, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
+  DONE_DAYS, doneTodos, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
@@ -32,7 +32,7 @@ test('the manifest declares the app, its background module and the inbox folder'
   assert.ok(existsSync(join(root, app.seed, app.data)))
   assert.ok(existsSync(join(root, app.background.module)))
   assert.ok(app.background.fs.read.every(folder => folder.startsWith('~/')))
-  assert.deepEqual(app.localActions, ['dismiss_finding', 'mark_done'])
+  assert.deepEqual(app.localActions, ['dismiss_finding', 'mark_done', 'undo_done', 'delete_todo'])
 })
 
 test('the hooks file names a module inside hooks/, and the server is the one the template scopes to', () => {
@@ -605,6 +605,19 @@ test('after a run the board shows the new finding and the alert as analyzed', as
   })
 })
 
+test("undoing an alert's to-do with no copy kept rebuilds it from the alert at once", async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  const files = { 'data/handled.json': JSON.stringify([{ id: 'alert:a', at: '2026-11-10' }]) }
+  world.$.fs.exists = async p => p in files
+  world.$.fs.read = async p => files[p]
+  world.$.fs.write = async (p, text) => { files[p] = text }
+  world.state.value = { alerts: [trippedRow('a')], findings: [], cases: [], doneCases: [{ id: 'alert:a' }], sync: { at: NOW }, summary: {} }
+  await handleAction(world.$, { action: 'undo_done', context: { id: 'alert:a' } })
+  assert.deepEqual(JSON.parse(files['data/handled.json']), [])
+  assert.deepEqual(world.state.value.cases.map(c => c.id), ['alert:a'])
+  assert.deepEqual(world.state.value.doneCases, [])
+})
+
 test('a tripped alert is a to-do with the analysis in it; with no rule there is no refund to-do', () => {
   const alertRules = [{ id: 'refund-watch', name: 'Refund rate watch', metric: 'refund_rate', riseAbove: 1.5 }]
   const findings = [{ id: 'f-1', alertId: 'refund-watch', week: '2026-11-03..2026-11-09', at: '2026-11-10T09:00:00-05:00', title: '65W charger: bad batch', conclusion: 'Chargers stop charging.' }]
@@ -642,14 +655,54 @@ test('mark_done records the day in the handled file and drops the to-do from the
   world.$.fs.exists = async p => p in files
   world.$.fs.read = async p => files[p]
   world.$.fs.write = async (p, text) => { files[p] = text; world.written[p] = text }
-  const row = id => ({ id, kind: 'overdue_invoice', title: id, detail: '', tone: 'warning', label: 'Overdue', since: NOW, ask: '' })
+  const row = id => ({ id, kind: 'overdue_invoice', title: id, detail: '', tone: 'warning', label: 'Overdue', since: NOW, ask: `Ask ${id}` })
   world.state.value = { cases: [row('a'), row('b')], needs: [row('a'), row('b')], summary: { alertsNote: 'n' } }
   assert.deepEqual(await handleAction(world.$, { action: 'mark_done', context: { id: 'b' } }), { handled: true })
-  assert.deepEqual(JSON.parse(files['data/handled.json']), [{ id: 'forever', at: '' }, { id: 'b', at: '2026-11-10' }], 'entries past 60 days dropped, the id recorded once')
+  assert.deepEqual(JSON.parse(files['data/handled.json']), [{ id: 'forever', at: '' }, { id: 'b', at: '2026-11-10', todo: row('b') }], 'entries past 60 days dropped, the id recorded once, with the to-do as it was')
   assert.deepEqual(world.state.value.cases.map(c => c.id), ['a'])
   assert.deepEqual(world.state.value.needs.map(c => c.id), ['a'])
+  assert.deepEqual(world.state.value.doneCases, [{ id: 'b', title: 'b', detail: '', kind: 'overdue_invoice', doneLabel: '✓ Done Nov 10' }])
   assert.deepEqual(world.state.value.summary, { alertsNote: 'n', casesNote: '1 open, most urgent first', todoCount: 1, openTab: 2 })
   assert.deepEqual(await handleAction(world.$, { action: 'mark_done', context: {} }), { handled: false })
+
+  assert.deepEqual(await handleAction(world.$, { action: 'undo_done', context: { id: 'b' } }), { handled: true })
+  assert.deepEqual(JSON.parse(files['data/handled.json']), [{ id: 'forever', at: '' }], 'undo removes the entry')
+  assert.deepEqual(world.state.value.cases.map(c => c.id).sort(), ['a', 'b'], 'open again at once, as it was')
+  assert.deepEqual(world.state.value.doneCases, [])
+  assert.equal(world.state.value.summary.todoCount, 2)
+
+  await handleAction(world.$, { action: 'mark_done', context: { id: 'b' } })
+  assert.deepEqual(await handleAction(world.$, { action: 'delete_todo', context: { id: 'b' } }), { handled: true })
+  assert.deepEqual(JSON.parse(files['data/handled.json']).at(-1), { id: 'b', at: '2026-11-10', state: 'deleted', todo: row('b') })
+  assert.deepEqual([world.state.value.cases.map(c => c.id), world.state.value.doneCases], [['a'], []], 'deleted: on neither list')
+})
+
+test('the done list shows to-dos done within DONE_DAYS, latest first, live when the case still exists; deleted and expired ones are left out', () => {
+  const live = [{ id: 'invoice:x', kind: 'overdue_invoice', title: 'Invoice X overdue 9 days', detail: 'now' }]
+  const handled = [
+    { id: 'invoice:x', at: '2026-11-05', todo: { id: 'invoice:x', title: 'Invoice X overdue 5 days', detail: 'then' } },
+    { id: 'alert:a', at: '2026-11-08', todo: { id: 'alert:a', kind: 'alert', title: 'Refund rate jump triggered', detail: 'd' } },
+    { id: 'alert:gone', at: '2026-11-08' },
+    { id: 'alert:old', at: '2026-11-01', todo: { title: 'old' } },
+    { id: 'alert:del', at: '2026-11-08', state: 'deleted', todo: { title: 'deleted' } },
+    'dispute:forever',
+  ]
+  assert.deepEqual(doneTodos(handled, live, '2026-11-09'), [
+    { id: 'alert:a', title: 'Refund rate jump triggered', detail: 'd', kind: 'alert', doneLabel: '✓ Done Nov 8' },
+    { id: 'invoice:x', title: 'Invoice X overdue 9 days', detail: 'now', kind: 'overdue_invoice', doneLabel: '✓ Done Nov 5' },
+  ])
+  assert.equal(isDone(handled, 'alert:del', '2026-11-09'), true, 'a deleted to-do stays off the open list')
+  const state = deriveState({ raw, orders: storeOrders, openInvoices, handled: [{ id: 'invoice:INV2-A', at: '2026-11-10' }], errors: {}, now: NOW })
+  assert.deepEqual(state.doneCases.map(c => c.id), ['invoice:INV2-A'])
+})
+
+test('a done to-do shows a green check and a menu with Undo and Delete', () => {
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  assert.match(board, /^todo = Column\(\[todoHead, todoList, doneList, alertsHead/m)
+  assert.match(board, /^doneBadge = Badge\(\$doneLabel, "success"\)$/m)
+  assert.match(board, /^doneMenu = Menu\("More", \[doneUndo, doneDelete\]\)$/m)
+  assert.match(board, /Event\("undo_done", \{id: \$id\}\)/)
+  assert.match(board, /Event\("delete_todo", \{id: \$id\}\)/)
 })
 
 test('alerts are added from a plus card that ends the rule grid, not from a button in the heading', () => {

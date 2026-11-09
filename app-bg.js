@@ -13,7 +13,7 @@
  * top-level key per patch, so a day's rollover that changes every figure is
  * still a handful of patches.
  */
-import { addDays, dateOf } from './lib/dates.js'
+import { addDays, dateOf, shortDate } from './lib/dates.js'
 import { DEFAULT_RULES, checkRules, disputeAlerts } from './lib/alerts.js'
 import { refundBreakdown } from './lib/insights.js'
 import { invoiceRowFields, paymentOrders, readStoreRow, salesBoard } from './lib/sales.js'
@@ -112,15 +112,18 @@ export function register(on) {
 }
 
 /**
- * The board's local actions: `dismiss_finding` {id} removes a finding, and
- * `mark_done` {id} hides a to-do for DONE_DAYS, in their files and on the
- * board at once. Answers {handled: false} for any other action, which then
- * goes to the model. Alerts are changed and removed by the session agent,
- * asked through the composer.
+ * The board's local actions, each changing its file and the board at once:
+ * `dismiss_finding` {id} removes a finding; `mark_done` {id} moves a to-do to
+ * the done list for DONE_DAYS; `undo_done` {id} puts it back on the open
+ * list; `delete_todo` {id} takes it off both for DONE_DAYS. Answers
+ * {handled: false} for any other action, which then goes to the model.
+ * Alerts are changed and removed by the session agent, asked through the
+ * composer.
  */
 export async function handleAction($, e) {
   const id = e && e.context && typeof e.context.id === 'string' ? e.context.id : ''
-  if (e && e.action === 'mark_done' && id) return markDone($, id)
+  const todoAction = e && TODO_ACTIONS[e.action]
+  if (todoAction && id) return changeTodo($, id, todoAction)
   const target = e && e.action === 'dismiss_finding' ? { file: FINDINGS_FILE, key: 'findings' } : null
   if (!target || !id) return { handled: false }
   const doc = await readJsonFile($, target.file)
@@ -135,15 +138,31 @@ export async function handleAction($, e) {
   return { handled: true }
 }
 
-/** Records a to-do as done today in the handled file and drops it from the board. */
-async function markDone($, id) {
+const TODO_ACTIONS = { mark_done: 'done', undo_done: 'open', delete_todo: 'deleted' }
+
+/**
+ * Moves a to-do between the open list, the done list and neither: records it
+ * in the handled file (with the to-do itself, so the done list can show it
+ * and an undo can put it back) and republishes both lists.
+ */
+async function changeTodo($, id, to) {
   const today = dateOf(await $.clock.now())
-  const kept = normalizeHandled(await readJsonFile($, HANDLED_FILE))
-    .filter(h => h.id !== id && (!h.at || h.at >= addDays(today, -60)))
-  await $.fs.write(HANDLED_FILE, `${JSON.stringify([...kept, { id, at: today }], null, 2)}\n`)
+  const handled = normalizeHandled(await readJsonFile($, HANDLED_FILE))
+  const before = handled.find(h => h.id === id)
   const state = (await $.app.state.get()) || {}
-  const cases = (Array.isArray(state.cases) ? state.cases : []).filter(c => c.id !== id)
-  await publishState($, state, { ...state, ...todoView(cases), summary: { ...(state.summary || {}), ...todoSummary(cases) } })
+  const open = Array.isArray(state.cases) ? state.cases : []
+  const todo = open.find(c => c.id === id) || (before && before.todo) || null
+  const kept = handled.filter(h => h.id !== id && (!h.at || h.at >= addDays(today, -60)))
+  const entry = to === 'open' ? null
+    : { id, at: to === 'deleted' && before && before.at ? before.at : today, ...(to === 'deleted' ? { state: 'deleted' } : {}), ...(todo ? { todo } : {}) }
+  const next = entry ? [...kept, entry] : kept
+  await $.fs.write(HANDLED_FILE, `${JSON.stringify(next, null, 2)}\n`)
+  const others = open.filter(c => c.id !== id)
+  const cases = to === 'open' && todo ? openTodos([...others, todo], [], today) : others
+  const doneCases = doneTodos(next, cases, today)
+  await publishState($, state, { ...state, ...todoView(cases), doneCases, summary: { ...(state.summary || {}), ...todoSummary(cases) } })
+  // An alert's to-do is rebuilt from the alert itself; any other waits for the next sync.
+  if (to === 'open' && !todo && id.startsWith('alert:')) await refreshFindings($)
   return { handled: true }
 }
 
@@ -275,11 +294,14 @@ export async function refreshFindings($) {
   const alerts = (Array.isArray(state.alerts) ? state.alerts : []).map(a => alertWithStatus(a, findings, analyzing))
   const now = (state.sync && state.sync.at) || (await $.clock.now())
   const others = (Array.isArray(state.cases) ? state.cases : []).filter(c => c.kind !== 'alert')
-  const cases = openTodos([...others, ...alertTodos(alerts, findings, now)], await readHandled($), dateOf(now))
+  const handled = await readHandled($)
+  const live = [...others, ...alertTodos(alerts, findings, now)]
+  const cases = openTodos(live, handled, dateOf(now))
   await publishState($, state, {
     ...state,
     alerts,
     ...todoView(cases),
+    doneCases: doneTodos(handled, live, dateOf(now)),
     findings: viewFindings(findings),
     summary: { ...(state.summary || {}), ...todoSummary(cases), findingsNote: findingsNote(findings), alertsNote: alertsNote(alerts, state.paypalAlerts) },
   })
@@ -521,12 +543,36 @@ async function readHandled($) {
 }
 
 /**
- * Handled entries as {id, at}: `{id, at: 'YYYY-MM-DD'}` is done for DONE_DAYS
- * from `at`; a bare id string is done for good (at '').
+ * Handled entries as {id, at, state?, todo?}: `{id, at: 'YYYY-MM-DD'}` is
+ * done for DONE_DAYS from `at`, `state: 'deleted'` is off the board for as
+ * long; a bare id string is done for good (at ''). `todo` is the to-do as
+ * it was, kept to show it on the done list and to undo.
  */
 export function normalizeHandled(list) {
   return (Array.isArray(list) ? list : []).flatMap(h => typeof h === 'string' ? [{ id: h, at: '' }]
-    : h && typeof h.id === 'string' ? [{ id: h.id, at: typeof h.at === 'string' ? h.at.slice(0, 10) : '' }] : [])
+    : h && typeof h.id === 'string' ? [{
+      id: h.id,
+      at: typeof h.at === 'string' ? h.at.slice(0, 10) : '',
+      ...(h.state === 'deleted' ? { state: 'deleted' } : {}),
+      ...(h.todo && typeof h.todo === 'object' && typeof h.todo.title === 'string' ? { todo: h.todo } : {}),
+    }] : [])
+}
+
+/**
+ * The done list: to-dos marked done less than DONE_DAYS ago, latest first,
+ * each as its live version when there is one, else as it was when marked.
+ * One with neither (an id the agent wrote for a case now gone) is left out.
+ */
+export function doneTodos(handled, live, today) {
+  const byId = new Map((live || []).map(c => [c.id, c]))
+  return normalizeHandled(handled)
+    .filter(h => h.state !== 'deleted' && h.at && today < addDays(h.at, DONE_DAYS))
+    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+    .flatMap(h => {
+      const todo = byId.get(h.id) || h.todo
+      if (!todo) return []
+      return [{ id: h.id, title: todo.title, detail: todo.detail || '', kind: todo.kind || '', doneLabel: `✓ Done ${shortDate(h.at)}` }]
+    })
 }
 
 /** Whether a to-do is hidden on `today`: done for good, or done less than DONE_DAYS ago. */
@@ -545,7 +591,8 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
   const alerts = viewAlerts(checkRules(alertRules, orders, today), findings, running)
   const paypalAlerts = disputeAlerts(disputes, now)
   const found = deriveCases({ invoices: openInvoices, disputes, transactions, inboxFiles, now })
-  const cases = openTodos([...found, ...alertTodos(alerts, findings, now)], handled, today)
+  const live = [...found, ...alertTodos(alerts, findings, now)]
+  const cases = openTodos(live, handled, today)
   const errorNames = Object.keys(errors)
   const noteParts = [`Synced ${timeOfDay(now)}`]
   if (errorNames.length) noteParts.push(`${errorNames.length} read(s) failed: ${errorNames.join(', ')}`)
@@ -554,6 +601,7 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
   return {
     ...board,
     ...todoView(cases),
+    doneCases: doneTodos(handled, live, today),
     alerts,
     paypalAlerts,
     findings: viewFindings(findings),
