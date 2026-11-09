@@ -121,7 +121,7 @@ missing.
 | --- | --- |
 | `week.range` | The 7-day window and the one it is compared with |
 | `week.kpis.{net,orders,aov,refunds}` | `{label, value, trendValue, trend}` for a `Metric`; `trend` is `up`, `down` or `flat` |
-| `week.byCountry`, `month.byCountry` | `{label, value, color}`: share of sales in %, US, CA, GB, AU, DE and Other; largest first, Other last; `label` ends with the whole-percent share ("Canada 30%") |
+| `week.byCountry`, `month.byCountry` | `{label, value, color}`: share of sales in whole percent, US, CA, GB, AU, DE and Other; largest first, Other last; under 0.5% left out |
 | `week.daily` | `{label, value}`: net sales per day in dollars, refunds taken off on the day they were made |
 | `week.topProducts` | `{product, units, sales}`, the five best sellers by sales |
 | `week.latest` | `{id, customer, country, items, total, status}`; `status` is `Paid`, `Refunded` or `Partly refunded` |
