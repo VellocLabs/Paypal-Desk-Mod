@@ -10,7 +10,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { describeCall, isWriteTool, register as registerGuard } from '../hooks/guard.js'
 import {
-  FULL_SCAN_MS, KEEP_DAYS, MAX_PAGE_NUMBER, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
+  FULL_SCAN_MS, KEEP_DAYS, MAX_PAGE_NUMBER, ALERTS_FILE, FINDINGS_FILE, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
@@ -132,7 +132,8 @@ test('deriveState turns the reads into the sales board and cases, most urgent fi
   assert.deepEqual(state.week.byCountry.map(c => c.label), ['United States', 'Germany'])
   assert.equal(state.month.products.length, 4)
   assert.deepEqual(state.disputes.map(d => d.id), ['PP-D-1', 'PP-D-2'])
-  assert.deepEqual(state.summary, { casesNote: '6 open, most urgent first', disputesNote: '1 open of 2' })
+  assert.equal(state.summary.casesNote, '6 open, most urgent first')
+  assert.equal(state.summary.disputesNote, '1 open of 2')
   for (const gone of ['invoices', 'plans', 'series']) assert.equal(state[gone], undefined, gone)
   assert.deepEqual(state.cases.map(c => c.kind), ['dispute', 'overdue_invoice', 'duplicate_payment', 'overdue_invoice', 'refund_spike', 'invoice_request'])
   assert.equal(state.cases[0].id, 'dispute:PP-D-1')
@@ -140,7 +141,8 @@ test('deriveState turns the reads into the sales board and cases, most urgent fi
   assert.equal(state.cases[1].tone, 'danger')
   assert.equal(state.cases[3].id, 'invoice:INV2-B')
   assert.equal(state.cases[3].tone, 'warning')
-  assert.match(state.cases[4].detail, /^30% of the last 7 days/)
+  assert.match(state.cases[4].detail, /^30\.0% of the last 7 days' sales were refunded, against 0\.0%/)
+  assert.equal(state.cases[4].title, 'Refunds up +30.0 pts this week')
   assert.match(state.cases.at(-1).detail, /inbox\/march\.csv/)
   assert.equal(state.sync.ok, true)
   assert.ok(JSON.stringify(state).length < 20_000)
@@ -246,10 +248,10 @@ test('syncOnce publishes the board and copies new inbox files into the app folde
   assert.equal(world.state.value.week.kpis.net.value, '$200')
   assert.equal(world.state.value.week.latest.length, 2)
   assert.ok(world.state.value.cases.some(c => c.id === 'invoice:INV2-A'))
-  assert.deepEqual(Object.keys(world.written), ['inbox/orders.csv'])
+  assert.deepEqual(Object.keys(world.written), ['inbox/orders.csv', 'data/refunds.json'])
   assert.ok(world.state.value.cases.some(c => c.id === 'file:orders.csv'))
   await syncOnce(world.$, { inbox: '/home/me/Documents/paypal-desk/inbox', now: NOW })
-  assert.equal(Object.keys(world.written).length, 1, 'a seen file is not copied again')
+  assert.equal(Object.keys(world.written).length, 2, 'a seen file is not copied again')
 })
 
 test('the state is published one patch per changed top-level key, and old keys are removed', async () => {
@@ -297,7 +299,7 @@ test('a full read each hour sees a refund on an old page and drops a deleted inv
   assert.equal(world.store[ORDERS_KEY].orders[last.invoice_id].refund, null, 'not seen before the hour is up')
   await syncOnce(world.$, { now: NOW + FULL_SCAN_MS })
   const cached = world.store[ORDERS_KEY].orders
-  assert.deepEqual(cached[last.invoice_id].refund, { date: last.due_date, cents: 1200 })
+  assert.deepEqual(cached[last.invoice_id].refund, { date: last.due_date, cents: 1200, sku: null, reason: null })
   assert.equal(cached[gone.invoice_id], undefined)
   assert.equal(Object.keys(cached).length, 149)
 })
@@ -454,4 +456,65 @@ test('a sync adds the store payments from Transaction Search, every page, and ke
   await syncOnce(failing.$, { now: NOW + 5 * 60_000 })
   assert.equal(failing.state.value.week.kpis.orders.value, '5', 'the cached payments still count')
   assert.match(failing.state.value.sync.note, /list_transactions/)
+})
+
+test('the home view: a brief that counts what needs you, the top cases, alerts with their analysis status, and findings', () => {
+  const alertRules = [
+    { id: 'refund-watch', name: 'Refund rate watch', metric: 'refund_rate', changeAbovePts: 1.5 },
+    { id: 'ceiling', name: 'Refund ceiling', metric: 'refund_rate', rateAbovePct: 50 },
+  ]
+  const findings = [
+    { id: 'f-1', alertId: 'refund-watch', week: '2026-11-03..2026-11-09', at: '2026-11-10T09:00:00-05:00', title: '65W charger: bad batch', conclusion: 'Refunds since Nov 2 are chargers that stop charging.', action: 'Pause the charger' },
+    { id: 'f-0', at: '2026-11-09T09:00:00-05:00', title: 'Older', conclusion: 'x' },
+  ]
+  const state = deriveState({ raw, orders: storeOrders, alertRules, findings, openInvoices, handled: [], errors: {}, now: NOW })
+  assert.match(state.week.brief, /Refunds are 30\.0% of sales \(\+30\.0 pts\)\. 5 things need you\.$/)
+  assert.equal(state.week.askRefunds, 'Why did refunds go up 30.0 pts in the last 7 days (Nov 3 – Nov 9, 2026)? Is anything unusual?')
+  assert.equal(state.needs.length, 3)
+  assert.deepEqual(state.needs, state.cases.slice(0, 3))
+  assert.deepEqual(state.alerts.map(a => [a.id, a.status, a.tone]), [['refund-watch', 'Tripped · analyzed', 'warning'], ['ceiling', 'Quiet', 'success']])
+  assert.deepEqual(state.findings.map(f => [f.id, f.source]), [['f-1', 'Automatic analysis'], ['f-0', 'Asked in chat']])
+  assert.equal(state.findings[0].action, 'Suggested: Pause the charger')
+  assert.equal(state.summary.alertsNote, '1 tripped of 2')
+
+  const pending = deriveState({ raw, orders: storeOrders, alertRules, findings: [], openInvoices, handled: [], errors: {}, now: NOW })
+  assert.equal(pending.alerts[0].status, 'Tripped · analysis pending')
+})
+
+test('a sync reads the alert and finding files and writes the refund breakdown for the agent', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  const files = {
+    [ALERTS_FILE]: JSON.stringify({ alerts: [{ id: 'refund-watch', name: 'Refund rate watch', metric: 'refund_rate', changeAbovePts: 1.5 }] }),
+    [FINDINGS_FILE]: 'not json',
+  }
+  world.$.fs.exists = async p => p in files
+  world.$.fs.read = async p => files[p]
+  await syncOnce(world.$, { now: NOW })
+  assert.equal(world.state.value.alerts[0].id, 'refund-watch')
+  assert.deepEqual(world.state.value.findings, [], 'a bad findings file reads as none')
+  const breakdown = JSON.parse(world.written['data/refunds.json'])
+  assert.equal(breakdown.asOf, '2026-11-10')
+  assert.equal(breakdown.weeks.length, 4)
+})
+
+test('delete_alert and dismiss_finding change the file and the board at once; other actions go to the model', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  const files = {
+    [ALERTS_FILE]: JSON.stringify({ alerts: [{ id: 'a' }, { id: 'b' }] }),
+    [FINDINGS_FILE]: JSON.stringify({ findings: [{ id: 'f' }] }),
+  }
+  world.$.fs.exists = async p => p in files
+  world.$.fs.read = async p => files[p]
+  world.$.fs.write = async (p, text) => { files[p] = text; world.written[p] = text }
+  world.state.value = { alerts: [{ id: 'a' }, { id: 'b' }], findings: [{ id: 'f' }] }
+
+  assert.deepEqual(await handleAction(world.$, { action: 'delete_alert', context: { id: 'a' } }), { handled: true })
+  assert.deepEqual(JSON.parse(files[ALERTS_FILE]).alerts, [{ id: 'b' }])
+  assert.deepEqual(world.state.value.alerts, [{ id: 'b' }])
+  assert.deepEqual(world.published.at(-1).map(p => p.path), ['/alerts'])
+
+  assert.deepEqual(await handleAction(world.$, { action: 'dismiss_finding', context: { id: 'f' } }), { handled: true })
+  assert.deepEqual(world.state.value.findings, [])
+  assert.deepEqual(await handleAction(world.$, { action: 'ask_why', context: { draft: 'Why?' } }), { handled: false })
+  assert.deepEqual(await handleAction(world.$, { action: 'delete_alert', context: {} }), { handled: false })
 })

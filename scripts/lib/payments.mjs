@@ -73,7 +73,7 @@ export function captureOf(answer) {
 
 /** The refund request for an order-book refund. */
 export function refundBody(order) {
-  return { amount: usd(order.refund.cents), note_to_payer: `Refund for order ${order.number}` }
+  return { amount: usd(order.refund.cents), note_to_payer: `Refund for order ${order.number}${order.refund.reason ? `: ${order.refund.reason}` : ''}` }
 }
 
 /** The journal entries whose order-book refund is due on `today` and not yet made. */

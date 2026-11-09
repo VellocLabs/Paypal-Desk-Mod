@@ -31,10 +31,11 @@ test('a paid invoice numbered PD-YYYYMMDD-NNN is a store order: PayPal gives amo
 test('a refund comes from the order book, never above the amount; a bare refund status is a full one on the order day', () => {
   const row = storeRow({ date: '2026-11-05', value: '500.00', refunded: true })
   const book = makeOrder(row.invoice_number, '2026-11-05')
-  assert.deepEqual(readStoreRow(row).order.refund, { date: book.refund.date, cents: book.refund.cents })
+  assert.deepEqual(readStoreRow(row).order.refund, { date: book.refund.date, cents: book.refund.cents, sku: book.refund.sku, reason: book.refund.reason })
+  assert.ok(book.refund.reason, 'an order-book refund says why')
   assert.equal(readStoreRow({ ...row, amount: '1.00' }).order.refund.cents, 100)
   assert.equal(readStoreRow(storeRow({ date: '2026-11-05', value: '24.00' })).order.refund, null)
-  assert.deepEqual(readStoreRow(storeRow({ date: '2026-11-05', value: '24.00', status: 'MARKED_AS_REFUNDED' })).order.refund, { date: '2026-11-05', cents: 2400 })
+  assert.deepEqual(readStoreRow(storeRow({ date: '2026-11-05', value: '24.00', status: 'MARKED_AS_REFUNDED' })).order.refund, { date: '2026-11-05', cents: 2400, sku: null, reason: null })
 })
 
 test('an order shows as refunded only from the refund day on', () => {
@@ -61,7 +62,8 @@ test('a completed payment carrying a store order number is an order on its own d
     cents: 6900, customer: `${book.buyer.first} ${book.buyer.last}`, buyer: book.buyer.email, refund: null,
   })
   assert.equal(orders[1].date, '2026-11-08', '00:22 UTC on the 9th is the evening of the 8th in Toronto')
-  assert.deepEqual(orders[1].refund, { date: '2026-11-12', cents: 4000 }, 'two refunds, the second on the 12th, capped at the payment')
+  const bookRefund = makeOrder('PD-20261109-002', '2026-11-09').refund
+  assert.deepEqual(orders[1].refund, { date: '2026-11-12', cents: 4000, sku: bookRefund ? bookRefund.sku : null, reason: bookRefund ? bookRefund.reason : null }, 'two refunds, the second on the 12th, capped at the payment')
   assert.deepEqual(paymentOrders(undefined), [])
 })
 
@@ -110,7 +112,8 @@ test('the board: last 7 days against the 7 before, 30-day totals, both ending ye
   assert.deepEqual(w.kpis.net, { label: 'Net', value: '$153', trendValue: '+53.0%', trend: 'up' })
   assert.deepEqual(w.kpis.orders, { label: 'Count', value: '3', trendValue: '+200.0%', trend: 'up' })
   assert.deepEqual(w.kpis.aov, { label: 'AOV', value: '$62.67', trendValue: '-37.3%', trend: 'down' })
-  assert.deepEqual(w.kpis.refunds, { label: 'Rate', value: '18.6%', trendValue: '1 refunds · $35', trend: 'flat' })
+  assert.deepEqual(w.kpis.refunds, { label: 'Rate', value: '18.6%', trendValue: '+18.6 pts', trend: 'up' })
+  assert.equal(w.refundsNote, '1 refund · $35')
   assert.deepEqual(w.daily.map(d => d.label), ['Tue 11/3', 'Wed 11/4', 'Thu 11/5', 'Fri 11/6', 'Sat 11/7', 'Sun 11/8', 'Mon 11/9'])
   assert.deepEqual(w.daily.map(d => d.value), [35, 0, 0, -35, 0, 0, 153])
   assert.deepEqual(w.byCountry.map(c => [c.label, c.value]), [['United States', 68.6], ['Canada', 18.6], ['United Kingdom', 12.8]])

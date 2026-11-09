@@ -36,6 +36,32 @@ Speak of them as orders and sales, not as invoices.
   row or request, the recipient's name and email, a due date), show the person
   the draft's number and total, and send it with `send_invoice` only when they
   confirm the dialog.
+- **Explain a change.** *Ask AI why* on the Refunds card arrives as
+  `ask_why` with `metric` and `draft`, a question the person may have
+  edited; treat `draft` as their message. Read `data/refunds.json` (the
+  module rewrites it every sync) before you answer: compare the four weekly
+  rates, find the product, country or reason that carries the change, and
+  check it against `refundedOrders` (order days, refund days, items). Say
+  what changed, what drives it, whether it looks like one product, one
+  country or the whole store, and what you would do (for a product refunded
+  for a fault: stop selling it until the batch is checked). Back each claim
+  with a figure from the file. Then add a finding (below) so the board keeps
+  the conclusion.
+- **Add an alert.** *Add with AI* arrives as `add_alert` with a `draft`;
+  the person may also just ask ("alert me when refunds jump"). Turn the
+  request into a rule in `data/alerts.json`, read the file back to the
+  person in one sentence, and say the module checks it every sync. Only
+  `refund_rate` rules can be checked: `changeAbovePts` trips when the weekly
+  rate moves by more than that many points either way, `rateAbovePct` when
+  it goes above that percentage. Ask for a figure only if the request has
+  none and no sensible default (1.5 pts, 5%) fits. Asked for another metric,
+  say this desk checks refund rates only for now. To remove an alert, delete
+  its entry; the board's delete button does the same.
+- **Analyze a tripped alert.** An alert whose status reads *Tripped ·
+  analysis pending* has no finding for its week yet. When you see one (on
+  any turn, or when asked), analyze it as for *Explain a change* and write a
+  finding with that alert's `id` as `alertId` and its `week`; the board then
+  shows *Tripped · analyzed*.
 - **Answer questions over the data.** Figures in chat may come with a chart in
   an `<a2ui>` block, but never on the app's own surface id.
 - **Reshape the dashboard when asked.** Load the `a2ui` skill, edit
@@ -52,7 +78,37 @@ Speak of them as orders and sales, not as invoices.
   three days as urgent and say so.
 - The `paypal-rules` skill holds the operating rules for disputes, invoices,
   refunds and subscriptions. Load it before acting on a case of that kind.
-- Do not edit `data/state.json` by hand: the module overwrites it.
+- Do not edit `data/state.json` or `data/refunds.json` by hand: the module
+  overwrites them.
+
+## Files you write
+
+`data/alerts.json`:
+
+```json
+{ "alerts": [
+  { "id": "refund-watch", "name": "Refund rate watch", "metric": "refund_rate", "changeAbovePts": 1.5, "rateAbovePct": 5 }
+] }
+```
+
+`id` is short, lowercase and unique; `name` is what the board shows; give
+one bound or both.
+
+`data/findings.json`, newest anywhere (the board sorts by `at`):
+
+```json
+{ "findings": [
+  { "id": "refunds-2026-11-08", "alertId": "refund-watch", "week": "2026-11-01..2026-11-07",
+    "at": "2026-11-08T10:30:00-05:00", "title": "65W charger: faulty batch since Nov 2",
+    "conclusion": "Two or three sentences with the figures.", "action": "Pause the 65W charger" }
+] }
+```
+
+`alertId` and `week` only for an alert's analysis (`week` as the alert row
+gives it); `action` is optional, a short imperative. Keep earlier findings;
+the board shows the newest five, and the person dismisses them there.
+Read each file before writing it and keep what is in it; create it if
+missing.
 
 ## State fields (`$/data`)
 
@@ -68,7 +124,12 @@ Speak of them as orders and sales, not as invoices.
 | `month.productCountry` | `{label, US, CA, GB, AU, DE, other}`: units of the ten best sellers by country group |
 | `month.products` | `{product, units, sales, US, CA, GB, AU, DE, other}` for every product sold |
 | `salesNote` | The line saying the store's orders are simulated sandbox data |
-| `summary.casesNote`, `summary.disputesNote` | The subtitles of the Cases and Disputes tabs |
+| `week.brief` | The week in a few sentences, ending with how many cases need the person |
+| `week.refundsNote`, `week.askRefunds` | The Refunds card subtitle, and the question *Ask AI why* drafts |
+| `needs` | The first three `cases` |
+| `alerts` | `{id, name, rule, reading, week, status, tone}`; `status` is `Tripped · analyzed`, `Tripped · analysis pending`, `Quiet` or `Not understood` |
+| `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
+| `summary.casesNote`, `summary.disputesNote`, `summary.alertsNote`, `summary.findingsNote` | Subtitles |
 | `cases` | `{id, kind, title, detail, tone, label, since, ref}`; `kind` is `dispute`, `overdue_invoice`, `refund_spike`, `duplicate_payment` or `invoice_request` |
 | `disputes` | `{id, reason, amount, status, respondBy}` |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |

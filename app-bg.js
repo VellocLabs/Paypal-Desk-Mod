@@ -14,7 +14,8 @@
  * still a handful of patches.
  */
 import { addDays, dateOf } from './lib/dates.js'
-import { invoiceRowFields, paymentOrders, readStoreRow, salesBoard } from './lib/sales.js'
+import { checkAlerts, rateChange, refundBreakdown, refundDriver, refundWeeks, weeklyBrief } from './lib/insights.js'
+import { invoiceRowFields, paymentOrders, productName, readStoreRow, salesBoard } from './lib/sales.js'
 
 export const POLL_MS = 5 * 60_000
 export const SERVER = 'paypal'
@@ -38,6 +39,16 @@ export const TRANSACTION_PAGES = 10
 export const PAYMENTS_KEY = 'payments.cache'
 const INBOX_EXTENSIONS = ['.csv', '.json', '.txt', '.md']
 const HANDLED_FILE = 'data/handled.json'
+/** The person's alert rules; the session agent writes them, the module checks them every sync. */
+export const ALERTS_FILE = 'data/alerts.json'
+/** Conclusions the agent wrote after an analysis, newest first on the board. */
+export const FINDINGS_FILE = 'data/findings.json'
+/** The refund breakdown the agent reads to explain a change; rewritten when it changes. */
+export const REFUNDS_FILE = 'data/refunds.json'
+const FINDINGS_SHOWN = 5
+const NEEDS_SHOWN = 3
+/** A weekly refund-rate change, in points, that opens a case by itself. */
+const REFUND_CASE_PTS = 1.5
 const SEEN_KEY = 'inbox.seen'
 export const ORDERS_KEY = 'orders.cache'
 
@@ -79,6 +90,55 @@ export function register(on) {
     if (timer) timer.cancel()
     timer = null
   })
+
+  on('app.action', async ($, e) => handleAction($, e))
+}
+
+/**
+ * The board's local actions: `delete_alert` {id} removes an alert rule and
+ * `dismiss_finding` {id} a finding, in their files and on the board at once.
+ * Answers {handled: false} for any other action, which then goes to the model.
+ */
+export async function handleAction($, e) {
+  const id = e && e.context && typeof e.context.id === 'string' ? e.context.id : ''
+  const target = e && e.action === 'delete_alert' ? { file: ALERTS_FILE, key: 'alerts' }
+    : e && e.action === 'dismiss_finding' ? { file: FINDINGS_FILE, key: 'findings' }
+      : null
+  if (!target || !id) return { handled: false }
+  const doc = await readJsonFile($, target.file)
+  const list = Array.isArray(doc && doc[target.key]) ? doc[target.key] : []
+  const kept = list.filter(item => !(item && item.id === id))
+  if (kept.length !== list.length) await $.fs.write(target.file, `${JSON.stringify({ ...doc, [target.key]: kept }, null, 2)}\n`)
+  const state = (await $.app.state.get()) || {}
+  const shown = Array.isArray(state[target.key]) ? state[target.key] : []
+  if (shown.some(item => item.id === id)) {
+    await publishState($, state, { ...state, [target.key]: shown.filter(item => item.id !== id) })
+  }
+  return { handled: true }
+}
+
+/** A JSON file of the app's folder, or null when it is missing or not JSON. */
+async function readJsonFile($, path) {
+  try {
+    if (!(await $.fs.exists(path))) return null
+    return JSON.parse(await $.fs.read(path, { as: 'text' }))
+  } catch {
+    return null
+  }
+}
+
+let refundsWritten = ''
+
+/** Rewrites the refund breakdown file when its content changed. */
+async function writeRefunds($, orders, today) {
+  const text = `${JSON.stringify(refundBreakdown(orders, today), null, 1)}\n`
+  if (text === refundsWritten) return
+  try {
+    await $.fs.write(REFUNDS_FILE, text)
+    refundsWritten = text
+  } catch (err) {
+    await $.log.warn(`could not write ${REFUNDS_FILE}: ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 /** One sync: connect, read, derive, publish. Exported for tests with a fake `$`. */
@@ -105,8 +165,12 @@ export async function syncOnce($, { inbox, now }) {
   const payments = await storePayments($, raw.transactions, Boolean(errors.list_transactions))
   const inboxFiles = inbox ? await pullInbox($, inbox) : []
   const handled = await readHandled($)
+  const orders = [...scan.orders, ...payments]
+  await writeRefunds($, orders, dateOf(now))
+  const alertRules = listOf(await readJsonFile($, ALERTS_FILE), 'alerts')
+  const findings = listOf(await readJsonFile($, FINDINGS_FILE), 'findings')
 
-  const next = deriveState({ previous, raw, orders: [...scan.orders, ...payments], openInvoices: scan.openInvoices, unread: scan.unread, inboxFiles, handled, errors, unavailable, now })
+  const next = deriveState({ previous, raw, orders, alertRules, findings, openInvoices: scan.openInvoices, unread: scan.unread, inboxFiles, handled, errors, unavailable, now })
   await publishState($, previous, next)
 }
 
@@ -354,11 +418,14 @@ async function readHandled($) {
 // ---- deriving (pure) -------------------------------------------------------
 
 /** The dashboard state from the reads. Pure: no `$`, so tests can drive it. */
-export function deriveState({ previous = {}, raw = {}, orders = [], openInvoices = [], unread = 0, inboxFiles = [], handled = [], errors = {}, unavailable = [], now }) {
+export function deriveState({ previous = {}, raw = {}, orders = [], alertRules = [], findings = [], openInvoices = [], unread = 0, inboxFiles = [], handled = [], errors = {}, unavailable = [], now }) {
   const disputes = normalizeDisputes(raw.disputes)
   const transactions = normalizeTransactions(raw.transactions)
-  const { refundShare, ...board } = salesBoard(orders, { today: dateOf(now) })
-  const cases = deriveCases({ invoices: openInvoices, disputes, transactions, refundShare, inboxFiles, now })
+  const today = dateOf(now)
+  const { refundShare, ...board } = salesBoard(orders, { today })
+  const weeks = refundWeeks(orders, today)
+  const refunds = { change: rateChange(weeks.now.rate, weeks.prior.rate), driver: refundDriver(weeks.now, weeks.prior), now: weeks.now, prior: weeks.prior }
+  const cases = deriveCases({ invoices: openInvoices, disputes, transactions, refundShare, refunds, inboxFiles, now })
     .filter(c => !handled.includes(c.id))
     .sort((a, b) => toneRank(b.tone) - toneRank(a.tone) || kindRank(b.kind) - kindRank(a.kind) || a.since - b.since)
     .slice(0, CASE_CAP)
@@ -367,9 +434,22 @@ export function deriveState({ previous = {}, raw = {}, orders = [], openInvoices
   if (errorNames.length) noteParts.push(`${errorNames.length} read(s) failed: ${errorNames.join(', ')}`)
   if (unavailable.length) noteParts.push(`not offered by this server: ${unavailable.join(', ')}`)
   if (unread) noteParts.push(`${unread} invoice(s) PayPal's server would not send`)
+  const alerts = viewAlerts(checkAlerts(alertRules, orders, today), findings)
+  const brief = `${weeklyBrief(orders, today)} ${cases.length === 0 ? 'Nothing needs you right now.' : `${cases.length} ${cases.length === 1 ? 'thing needs' : 'things need'} you.`}`
+  const up = refunds.change.pts >= 0
   return {
     ...board,
+    week: board.week && {
+      ...board.week,
+      brief,
+      askRefunds: `Why did refunds go ${up ? 'up' : 'down'} ${Math.abs(refunds.change.pts).toFixed(1)} pts in the last 7 days (${board.week.range.split(' · ')[0]})? Is anything unusual?`,
+    },
+    needs: cases.slice(0, NEEDS_SHOWN),
+    alerts,
+    findings: viewFindings(findings),
     summary: {
+      alertsNote: alerts.length === 0 ? 'None yet. Ask in chat, e.g. "alert me when refunds jump"' : `${alerts.filter(a => a.status.startsWith('Tripped')).length} tripped of ${alerts.length}`,
+      findingsNote: findings.length === 0 ? 'Conclusions from analyses show up here' : 'Newest first',
       casesNote: cases.length === 0 ? 'Nothing needs a decision right now' : `${cases.length} open, most urgent first`,
       disputesNote: disputes.length === 0 ? 'No disputes' : `${disputes.filter(d => d.open).length} open of ${disputes.length}`,
     },
@@ -385,6 +465,37 @@ export function deriveState({ previous = {}, raw = {}, orders = [], openInvoices
     },
     handled: previous.handled,
   }
+}
+
+/** A file's list under `key`, or none. */
+function listOf(doc, key) {
+  return doc && Array.isArray(doc[key]) ? doc[key].filter(item => item && typeof item === 'object') : []
+}
+
+/** Checked alerts as board rows: a tripped one says whether this week's analysis is in. */
+export function viewAlerts(checked, findings) {
+  return checked.map(a => {
+    const analyzed = a.status === 'tripped' && findings.some(f => f.alertId === a.id && f.week === a.week)
+    const status = a.status === 'tripped' ? (analyzed ? 'Tripped · analyzed' : 'Tripped · analysis pending') : a.status === 'ok' ? 'Quiet' : 'Not understood'
+    const tone = a.status === 'tripped' ? 'warning' : a.status === 'ok' ? 'success' : 'neutral'
+    return { id: a.id, name: a.name, rule: a.rule, reading: a.reading, week: a.week || '', status, tone }
+  })
+}
+
+/** The newest findings as board rows. */
+export function viewFindings(findings) {
+  return [...findings]
+    .filter(f => f.id && f.title)
+    .sort((a, b) => (String(a.at || '') < String(b.at || '') ? 1 : -1))
+    .slice(0, FINDINGS_SHOWN)
+    .map(f => ({
+      id: String(f.id),
+      title: String(f.title),
+      when: String(f.at || '').slice(0, 16).replace('T', ' '),
+      source: f.alertId ? 'Automatic analysis' : 'Asked in chat',
+      conclusion: String(f.conclusion || ''),
+      action: f.action ? `Suggested: ${f.action}` : '',
+    }))
 }
 
 function emptyState(previous) {
@@ -467,7 +578,7 @@ export function normalizeTransactions(value) {
 }
 
 /** The cases: what needs a person's decision, each with a stable id the agent can mark handled. */
-export function deriveCases({ invoices, disputes, transactions, refundShare = 0, inboxFiles, now }) {
+export function deriveCases({ invoices, disputes, transactions, refundShare = 0, refunds, inboxFiles, now }) {
   const cases = []
   for (const d of disputes) {
     if (!d.open) continue
@@ -497,7 +608,20 @@ export function deriveCases({ invoices, disputes, transactions, refundShare = 0,
       ref: inv.id,
     })
   }
-  if (refundShare > 0.2) {
+  if (refunds && refunds.change.pts >= REFUND_CASE_PTS) {
+    const d = refunds.driver
+    const lead = d ? ` Most are the ${productName(d.sku)}: ${d.refunds} of ${d.orders} orders${d.reason ? `, "${d.reason}"` : ''}.` : ''
+    cases.push({
+      id: `refunds:${refunds.now.from}`,
+      kind: 'refund_spike',
+      title: `Refunds up ${refunds.change.text} this week`,
+      detail: `${refunds.now.rate.toFixed(1)}% of the last 7 days' sales were refunded, against ${refunds.prior.rate.toFixed(1)}% the week before.${lead}`,
+      tone: 'warning',
+      label: 'Refund spike',
+      since: now,
+      ref: d ? d.sku : '',
+    })
+  } else if (refundShare > 0.2) {
     cases.push({
       id: `refunds:${dateOf(now).slice(0, 7)}`,
       kind: 'refund_spike',
