@@ -7,7 +7,7 @@ week_kpis = Row([week_net, week_orders, week_aov, week_refunds])
 week_net = Card(Column([Heading("Net sales", 3, "vs. previous 7 days"), Metric($/data/week/kpis/net/label, $/data/week/kpis/net/value, $/data/week/kpis/net/trendValue, $/data/week/kpis/net/trend)]), 1)
 week_orders = Card(Column([Heading("Orders", 3, "vs. previous 7 days"), Metric($/data/week/kpis/orders/label, $/data/week/kpis/orders/value, $/data/week/kpis/orders/trendValue, $/data/week/kpis/orders/trend)]), 1)
 week_aov = Card(Column([Heading("Avg order value", 3, "vs. previous 7 days"), Metric($/data/week/kpis/aov/label, $/data/week/kpis/aov/value, $/data/week/kpis/aov/trendValue, $/data/week/kpis/aov/trend)]), 1)
-week_refunds = Card(Column([Heading("Refunds", 3, $/data/week/refundsNote), Metric($/data/week/kpis/refunds/label, $/data/week/kpis/refunds/value, $/data/week/kpis/refunds/trendValue, $/data/week/kpis/refunds/trend)]), 1)
+week_refunds = Card(Column([Heading("Refunds", 3, $/data/week/refundsNote), Metric($/data/week/kpis/refunds/label, $/data/week/kpis/refunds/value, $/data/week/kpis/refunds/trendValue, $/data/week/kpis/refunds/trend, better="down", action=Event("compose", {text: $/data/week/askRefunds}), actionLabel="Ask AI why")]), 1)
 
 week_watch = Row([week_needs, week_findings])
 week_needs = Card(Column([Heading("Needs you", 3, $/data/summary/casesNote), List(_template($/data/needs, needRow))]), 1)
