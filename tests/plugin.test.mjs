@@ -703,7 +703,7 @@ test('alert cards carry a bell, to-dos say where they came from, and a done to-d
   assert.match(board, /^ruleTop = Row\(\[ruleIcon, ruleHeading, ruleBadge\]/m)
   assert.match(board, /^ruleIcon = Icon\("notifications"\)$/m)
   assert.match(board, /^paypalIcon = Icon\("notifications"\)$/m)
-  assert.match(board, /^todoMain = Column\(\[todoTop, todoSource, todoDetail\]/m)
+  assert.match(board, /^todoTitle = Heading\(\$title, 3, \$source\)$/m)
   assert.match(board, /^doneCard = Row\(/m, 'no card frame: a done to-do steps back')
 })
 
