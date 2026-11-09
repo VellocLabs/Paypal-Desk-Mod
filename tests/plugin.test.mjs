@@ -652,6 +652,14 @@ test('mark_done records the day in the handled file and drops the to-do from the
   assert.deepEqual(await handleAction(world.$, { action: 'mark_done', context: {} }), { handled: false })
 })
 
+test('alerts are added from a plus card that ends the rule grid, not from a button in the heading', () => {
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  assert.match(board, /^ruleAlertList = Grid\(_template\(\$\/data\/alerts, ruleCard\), minWidth=320, after=ruleAdd\)$/m)
+  assert.match(board, /^ruleAdd = AddCard\("Add alert with AI", Event\("compose", \{text: "Add an alert: /m)
+  assert.match(board, /^alertsHead = Heading\("Alerts", 2, /m)
+  assert.equal(board.match(/Add alert with AI/g).length, 1)
+})
+
 test('the board uses only icons the catalog offers', () => {
   const allowed = new Set(['accountCircle', 'add', 'arrowBack', 'arrowForward', 'attachFile', 'calendarToday', 'call', 'camera', 'check', 'close', 'delete', 'download', 'edit', 'event', 'error', 'fastForward', 'favorite', 'favoriteOff', 'folder', 'help', 'home', 'info', 'locationOn', 'lock', 'lockOpen', 'mail', 'menu', 'moreVert', 'moreHoriz', 'notificationsOff', 'notifications', 'pause', 'payment', 'person', 'phone', 'photo', 'play', 'print', 'refresh', 'rewind', 'search', 'send', 'settings', 'share', 'shoppingCart', 'skipNext', 'skipPrevious', 'star', 'starHalf', 'starOff', 'stop', 'upload', 'visibility', 'visibilityOff', 'volumeDown', 'volumeMute', 'volumeOff', 'volumeUp', 'warning'])
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')

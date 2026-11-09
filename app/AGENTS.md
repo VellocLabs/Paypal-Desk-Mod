@@ -87,9 +87,10 @@ true the alert has *triggered*. Alerts come from two sources and look alike:
   built-in "Refund rate jump" rule.
 
 **How a card looks.** The *Actions* tab shows the action list first, then
-the *Alerts* heading with *Add alert with AI*, then the alerts as cards in
-a grid, as many columns as fit: PayPal's first, then the rules. Every card
-has the same parts, top to bottom:
+the *Alerts* heading, then the alerts as cards in a grid, as many columns
+as fit: PayPal's first, then the rules, then a dashed card with a plus
+(tooltip *Add alert with AI*) that ends the grid. Every alert card has the
+same parts, top to bottom:
 
 1. The title, then a status badge: *Triggered* (amber), *OK* (green) or
    *Can't check* (grey) for a rule; for a dispute, what the merchant must
@@ -109,9 +110,10 @@ The module fills every part from the rule and the data. Adding, changing
 or deleting an alert never needs `app.a2ui` edited: never add a component,
 colour or layout for one alert. If the person wants alert cards to look
 different, change the shared card templates (`ruleCard`, `paypalCard`), so
-every card keeps one style.
+every card keeps one style. The add card stays the grid's last cell
+(`after=ruleAdd`); never put an add button anywhere else.
 
-**Add.** *Add alert with AI* writes a request into the chat box for the
+**Add.** The plus card writes a request into the chat box for the
 person to edit and send; they may also just ask ("tell me when a
 product's refunds go above 10%", "warn me if weekly sales drop under
 $20k"). Turn the request into rules in `data/alerts.json`, one rule per
