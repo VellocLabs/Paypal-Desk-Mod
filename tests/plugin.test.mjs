@@ -667,7 +667,7 @@ test('board: no tab repeats its own name as a title; each tab opens on its perio
   for (const [, name, child] of tabs) {
     const first = board.match(new RegExp(`^${child} = Column\\(\\[(\\w+)`, 'm'))[1]
     const line = board.match(new RegExp(`^${first} = (.*)$`, 'm'))[1]
-    assert.match(line, /^Heading\(\$\/data\/[\w/]+, 3\b/, `${name} opens on a bound level-3 line`)
+    assert.match(line, /^Heading\(subtitle=\$\/data\/[\w/]+[,)]/, `${name} opens on a bound subtitle line, small and muted`)
   }
   assert.doesNotMatch(board, /Heading\("(Store sales|Trends|Actions|Overview)"/)
 })
