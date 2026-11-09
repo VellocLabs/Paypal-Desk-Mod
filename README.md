@@ -47,17 +47,18 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   made, with its refunds as PayPal's Transaction Search lists them.
 - **Actions**: first the action list: open disputes with their response
   deadline, overdue invoices, two payments that look like one, a new
-  request file in the inbox folder, and every alert that triggered, with the
-  AI's conclusion. Each is worded as a task ("Look into the … alert") with
-  a line saying where it came from. *Ask AI* drafts a question about one in the chat box;
-  *Mark done* moves it to a done list with a green check for 7 days, and
-  it opens again if it is still true; a done one's ⋯ menu can undo it or
-  delete it.
-  Below it, the alerts, one card each with a bell: PayPal's disputes, and the rules you
-  set by asking the AI (a product's refund rate above 10%, weekly sales
-  under a floor, a country's orders dropping); the dashed plus card at the
-  end of the grid drafts that request. Each card shows the figure it
-  watches against the week before; a triggered rule is analyzed by the AI
+  request file in the inbox folder, and every alert rule that is met. Each
+  is an event: an emoji, what happened with the figure ("Refund rate rose
+  to 6.4%"), the rule it came from and the AI's conclusion. *Ask AI* drafts
+  a question about one in the chat box; *Mark done* moves it to a done list
+  with a green check for 7 days, and it opens again if it is still true; a
+  done one's ⋯ menu can undo it or delete it.
+  Below it, the alert rules, as settings: the built-in PayPal disputes
+  rule, and the rules you set by asking the AI (a product's refund rate
+  above 10%, weekly sales under a floor, a country's orders dropping), each
+  with its condition in words and whether it is met now; the dashed plus
+  card at the end of the grid drafts a new one. A met rule is analyzed by
+  the AI
   on its own (`lib/alerts.js` checks the rules). For what a plain rule
   cannot say (no sales two weeks running, a week under its 4-week average)
   the AI writes a formula, which the desk reads itself (`lib/formula.js`);

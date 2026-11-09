@@ -303,6 +303,7 @@ export async function refreshFindings($) {
     ...todoView(cases),
     doneCases: doneTodos(handled, live, dateOf(now)),
     findings: viewFindings(findings),
+    ruleCards: ruleCards(alerts, state.paypalAlerts),
     summary: { ...(state.summary || {}), ...todoSummary(cases), findingsNote: findingsNote(findings), alertsNote: alertsNote(alerts, state.paypalAlerts) },
   })
 }
@@ -604,6 +605,7 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
     doneCases: doneTodos(handled, live, today),
     alerts,
     paypalAlerts,
+    ruleCards: ruleCards(alerts, paypalAlerts),
     findings: viewFindings(findings),
     summary: {
       alertsNote: alertsNote(alerts, paypalAlerts),
@@ -655,9 +657,10 @@ export function alertTodos(alerts, findings, now) {
     return {
       id: `alert:${a.id}`,
       kind: 'alert',
-      title: `Look into the "${a.name}" alert`,
-      source: `From alert: ${a.name}, triggered`,
-      detail: `${sentenceCase(a.reading)}. ${analysis}`,
+      title: a.headline || sentenceCase(a.reading) || `${a.name} is met`,
+      source: `Alert rule: ${a.name}`,
+      icon: '🔔',
+      detail: analysis,
       tone: 'warning',
       label: 'Review',
       since: now,
@@ -694,6 +697,8 @@ export function viewAlerts(checked, findings, running = null) {
     reading: a.reading,
     week: a.week || '',
     summary: a.rule,
+    condition: a.condition || a.rule,
+    headline: a.headline || '',
     tripped: a.tripped,
     understood: a.understood,
     ask: a.understood
@@ -724,10 +729,42 @@ export function alertWithStatus(row, findings, running) {
 
 /** The Alerts heading's subtitle: how many of the rules and PayPal's disputes need a look. */
 function alertsNote(alerts, paypalAlerts = []) {
-  const all = [...(alerts || []), ...(paypalAlerts || [])]
-  if (all.length === 0) return 'None yet. Add one with AI, e.g. "any product\'s refund rate above 10%"'
-  const live = all.filter(a => a.tripped).length
-  return `Checked every 5 minutes · ${live === 0 ? `all ${all.length} quiet` : `${live} of ${all.length} need a look`}`
+  const met = ruleCards(alerts, paypalAlerts).filter(c => c.met).length
+  return `The desk checks these every 5 minutes · ${met === 0 ? 'none met now' : `${met} met now`}`
+}
+
+export const DISPUTE_RULE_ID = 'paypal-disputes'
+
+/**
+ * The Alert rules grid: the built-in PayPal disputes rule, then each rule,
+ * as a setting: its condition in words and whether it is met now, with the
+ * figure. What happened when one is met is a to-do, not part of the card.
+ */
+export function ruleCards(alerts = [], paypalAlerts = []) {
+  const open = (paypalAlerts || []).filter(d => d.open).length
+  const disputes = {
+    id: DISPUTE_RULE_ID,
+    name: 'PayPal disputes',
+    condition: 'A buyer opens a dispute or a chargeback on your PayPal account.',
+    met: open > 0,
+    status: open ? 'Met now' : 'Not met',
+    tone: open ? 'warning' : 'neutral',
+    statusLine: `${open ? `${open} open now` : 'None open'} · built in`,
+    editAsk: 'Change how the desk watches PayPal disputes: ',
+    deleteAsk: 'Stop watching PayPal disputes.',
+  }
+  return [disputes, ...(alerts || []).map(a => ({
+    id: a.id,
+    name: a.name,
+    condition: a.condition || a.rule,
+    met: Boolean(a.understood && a.tripped),
+    status: !a.understood ? "Can't check" : a.tripped ? 'Met now' : 'Not met',
+    tone: a.understood && a.tripped ? 'warning' : 'neutral',
+    statusLine: !a.understood ? 'Ask the AI to restate it as a rule this desk can check'
+      : [a.subject, [a.value, a.delta].filter(Boolean).join(', ')].filter(Boolean).join(': '),
+    editAsk: a.editAsk,
+    deleteAsk: a.deleteAsk,
+  }))]
 }
 
 function findingsNote(findings) {
@@ -839,8 +876,9 @@ export function deriveCases({ invoices, disputes, transactions, inboxFiles, now 
     cases.push({
       id: `dispute:${d.id}`,
       kind: 'dispute',
-      title: `Respond to dispute ${d.id}: ${d.reason || d.stage || 'open'}`,
-      source: 'From PayPal: a buyer dispute',
+      title: `Dispute ${d.id}: ${d.reason || d.stage || 'open'}`,
+      source: 'Alert rule: PayPal disputes',
+      icon: '🔔',
       detail: `${d.amount} in dispute${d.transactionId ? ` on transaction ${d.transactionId}` : ''}. ` +
         (daysLeft === null ? 'No response deadline given.' : daysLeft <= 0 ? 'Response overdue.' : `Respond within ${daysLeft} day(s).`),
       tone: daysLeft !== null && daysLeft <= 3 ? 'danger' : 'warning',
@@ -854,8 +892,9 @@ export function deriveCases({ invoices, disputes, transactions, inboxFiles, now 
     cases.push({
       id: `invoice:${inv.id}`,
       kind: 'overdue_invoice',
-      title: `Follow up on invoice ${inv.number}, ${inv.overdueDays} day(s) overdue`,
-      source: 'From PayPal: an unpaid invoice',
+      title: `Invoice ${inv.number} is ${inv.overdueDays} day(s) overdue`,
+      source: 'From PayPal: unpaid invoices',
+      icon: '🧾',
       detail: `${inv.amount}${inv.recipient ? ` from ${inv.recipient}` : ''}, due ${inv.due.slice(0, 10)}. A reminder or a cancellation needs your decision.`,
       tone: inv.overdueDays > 14 ? 'danger' : 'warning',
       label: inv.overdueDays > 14 ? 'Long overdue' : 'Overdue',
@@ -868,8 +907,9 @@ export function deriveCases({ invoices, disputes, transactions, inboxFiles, now 
     cases.push({
       id: `duplicate:${pair[0].id}:${pair[1].id}`,
       kind: 'duplicate_payment',
-      title: `Check two payments of ${money({ value: pair[0].value, currency_code: pair[0].currency })} from ${pair[0].payer || 'one payer'}`,
+      title: `Two payments of ${money({ value: pair[0].value, currency_code: pair[0].currency })} from ${pair[0].payer || 'one payer'}`,
       source: 'From PayPal: recent transactions',
+      icon: '💳',
       detail: `Transactions ${pair[0].id} and ${pair[1].id} were made within 10 minutes. One may need a refund.`,
       tone: 'warning',
       label: 'Check',
@@ -881,8 +921,9 @@ export function deriveCases({ invoices, disputes, transactions, inboxFiles, now 
     cases.push({
       id: `file:${file.name}`,
       kind: 'invoice_request',
-      title: `Draft the invoice asked for in ${file.name}`,
+      title: `New invoice request: ${file.name}`,
       source: 'From the inbox folder',
+      icon: '📥',
       detail: `Copied to inbox/${file.name} in the app's folder. Read it and draft the PayPal invoice it asks for.`,
       tone: 'info',
       label: 'Inbox',

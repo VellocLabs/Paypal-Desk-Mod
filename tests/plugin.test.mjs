@@ -136,7 +136,7 @@ test('deriveState turns the reads into the sales board and cases, most urgent fi
   assert.deepEqual(state.paypalAlerts.map(d => [d.id, d.status]), [['PP-D-1', 'Respond in 2 days'], ['PP-D-2', 'Resolved']])
   assert.deepEqual(state.alerts.map(a => [a.id, a.status, a.value]), [['refund-jump', 'Triggered', '30.0%']])
   assert.equal(state.summary.casesNote, '6 open, most urgent first')
-  assert.equal(state.summary.alertsNote, 'Checked every 5 minutes · 2 of 3 need a look')
+  assert.equal(state.summary.alertsNote, 'The desk checks these every 5 minutes · 2 met now')
   for (const gone of ['invoices', 'plans', 'series', 'disputes']) assert.equal(state[gone], undefined, gone)
   assert.deepEqual(state.cases.map(c => c.kind), ['dispute', 'overdue_invoice', 'duplicate_payment', 'overdue_invoice', 'alert', 'invoice_request'])
   assert.equal(state.cases[0].id, 'dispute:PP-D-1')
@@ -144,10 +144,15 @@ test('deriveState turns the reads into the sales board and cases, most urgent fi
   assert.equal(state.cases[1].tone, 'danger')
   assert.equal(state.cases[3].id, 'invoice:INV2-B')
   assert.equal(state.cases[3].tone, 'warning')
-  assert.equal(state.cases[4].title, 'Look into the "Refund rate jump" alert')
-  assert.deepEqual(state.cases.map(c => c.source), ['From PayPal: a buyer dispute', 'From PayPal: an unpaid invoice', 'From PayPal: recent transactions', 'From PayPal: an unpaid invoice', 'From alert: Refund rate jump, triggered', 'From the inbox folder'])
-  assert.ok(state.cases.every(c => /^(Respond|Follow up|Check|Look into|Draft) /.test(c.title)), 'every to-do reads as a task')
-  assert.match(state.cases[4].detail, /^Refund rate 30\.0% over Nov 3 – Nov 9, \+30\.0 pts on the week before\. The AI analysis is pending\.$/)
+  assert.equal(state.cases[4].title, 'Refund rate rose to 30.0% (+30.0 pts)')
+  assert.deepEqual(state.cases.map(c => c.source), ['Alert rule: PayPal disputes', 'From PayPal: unpaid invoices', 'From PayPal: recent transactions', 'From PayPal: unpaid invoices', 'Alert rule: Refund rate jump', 'From the inbox folder'])
+  assert.deepEqual(state.cases.map(c => c.icon), ['🔔', '🧾', '💳', '🧾', '🔔', '📥'])
+  assert.equal(state.cases[4].detail, 'The AI analysis is pending.')
+  assert.deepEqual(state.ruleCards.map(c => [c.id, c.status, c.statusLine]), [
+    ['paypal-disputes', 'Met now', '1 open now · built in'],
+    ['refund-jump', 'Met now', 'Last 7 days: 30.0%, +30.0 pts vs week before'],
+  ])
+  assert.equal(state.ruleCards[1].condition, "The store's refund rate rises more than 1.5 pts week over week.")
   assert.match(state.cases.at(-1).detail, /inbox\/march\.csv/)
   assert.equal(state.sync.ok, true)
   assert.ok(JSON.stringify(state).length < 20_000)
@@ -498,7 +503,7 @@ test('the home view: the top cases, alerts with their analysis status, and findi
   assert.equal(state.alerts[1].note, '')
   assert.deepEqual(state.findings.map(f => [f.id, f.source]), [['f-1', 'Automatic analysis'], ['f-0', 'Asked in chat']])
   assert.equal(state.findings[0].action, 'Suggested: Pause the charger')
-  assert.equal(state.summary.alertsNote, 'Checked every 5 minutes · 2 of 4 need a look', 'one tripped rule and one open dispute')
+  assert.equal(state.summary.alertsNote, 'The desk checks these every 5 minutes · 2 met now', 'one tripped rule and one open dispute')
 
   const pending = deriveState({ raw, orders: storeOrders, alertRules, findings: [], openInvoices, handled: [], errors: {}, now: NOW })
   assert.deepEqual([pending.alerts[0].analysis, pending.alerts[0].note], ['pending', 'Waiting for the AI to analyze it'])
@@ -601,9 +606,9 @@ test('after a run the board shows the new finding and the alert as analyzed', as
   assert.deepEqual([world.state.value.alerts[0].status, world.state.value.alerts[0].analysis], ['Triggered', 'analyzed'])
   assert.deepEqual(world.state.value.findings.map(f => [f.id, f.source]), [['f-1', 'Automatic analysis']])
   assert.deepEqual(world.state.value.cases.map(c => c.id), ['invoice:INV2-A', 'alert:a'])
-  assert.equal(world.state.value.cases[1].detail, 'Refund rate 6.3% over Nov 3 – Nov 9, +3.1 pts on the week before. AI: Charger batch. c', "the alert's to-do carries the conclusion")
+  assert.equal(world.state.value.cases[1].detail, 'AI: Charger batch. c', "the alert's to-do carries the conclusion")
   assert.deepEqual(world.state.value.summary, {
-    disputesNote: 'x', casesNote: '2 open, most urgent first', todoCount: 2, openTab: 2, findingsNote: 'Newest first', alertsNote: 'Checked every 5 minutes · 1 of 1 need a look',
+    disputesNote: 'x', casesNote: '2 open, most urgent first', todoCount: 2, openTab: 2, findingsNote: 'Newest first', alertsNote: 'The desk checks these every 5 minutes · 1 met now',
   })
 })
 
@@ -628,10 +633,11 @@ test('a tripped alert is a to-do with the analysis in it; with no rule there is 
   const state = deriveState({ raw, orders: storeOrders, alertRules, findings, openInvoices, handled: [], errors: {}, now: NOW })
   const todo = state.cases.find(c => c.kind === 'alert')
   assert.equal(todo.id, 'alert:refund-watch')
-  assert.equal(todo.title, 'Look into the "Refund rate watch" alert')
-  assert.match(todo.detail, /^Refund rate 30\.0% over Nov 3 – Nov 9, \+30\.0 pts on the week before\. AI: 65W charger: bad batch\. Chargers stop charging\.$/)
+  assert.equal(todo.title, 'Refund rate rose to 30.0% (+30.0 pts)', 'an event says what happened, with the figure')
+  assert.equal(todo.source, 'Alert rule: Refund rate watch')
+  assert.match(todo.detail, /^AI: 65W charger: bad batch\. Chargers stop charging\.$/)
   assert.match(todo.ask, /^The alert "Refund rate watch" \(Store: refund rate up more than 1\.5 pts\) reads refund rate 30\.0%/)
-  assert.match(state.cases[0].ask, /^Work this case \(dispute:PP-D-1\): Respond to dispute PP-D-1/)
+  assert.match(state.cases[0].ask, /^Work this case \(dispute:PP-D-1\): Dispute PP-D-1/)
   assert.equal(state.cases.length, plain.cases.length + 1)
   assert.deepEqual([state.summary.todoCount, state.summary.openTab], [state.cases.length, 2])
   const none = deriveState({ raw: {}, now: NOW })
@@ -698,12 +704,16 @@ test('the done list shows to-dos done within DONE_DAYS, latest first, live when 
   assert.deepEqual(state.doneCases.map(c => c.id), ['invoice:INV2-A'])
 })
 
-test('alert cards carry a bell, to-dos say where they came from, and a done to-do is a plain row', () => {
+test('events carry the emoji and the rule they came from; rule cards are settings with no bell or big figure', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
-  assert.match(board, /^ruleTop = Row\(\[ruleIcon, ruleHeading, ruleBadge\]/m)
-  assert.match(board, /^ruleIcon = Icon\("notifications"\)$/m)
-  assert.match(board, /^paypalIcon = Icon\("notifications"\)$/m)
+  assert.match(board, /^todoTop = Row\(\[todoIcon, todoTitle, todoBadge\]/m)
+  assert.match(board, /^todoIcon = Text\(\$icon\)$/m)
   assert.match(board, /^todoTitle = Heading\(\$title, 3, \$source\)$/m)
+  assert.match(board, /^alertsHead = Heading\("Alert rules", 2, /m)
+  assert.match(board, /^ruleBody = Column\(\[ruleHeading, ruleStatus, ruleBar\]\)$/m)
+  assert.match(board, /^ruleHeading = Heading\(\$name, 3, \$condition\)$/m)
+  assert.doesNotMatch(board, /Icon\("notifications"\)/)
+  assert.doesNotMatch(board, /paypalAlertList|paypalCard/, 'a dispute is an event, not a card in the rules grid')
   assert.match(board, /^doneCard = Row\(/m, 'no card frame: a done to-do steps back')
 })
 
@@ -718,9 +728,9 @@ test('a done to-do shows a green check and a menu with Undo and Delete', () => {
 
 test('alerts are added from a plus card that ends the rule grid, not from a button in the heading', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
-  assert.match(board, /^ruleAlertList = Grid\(_template\(\$\/data\/alerts, ruleCard\), minWidth=320, after=ruleAdd\)$/m)
+  assert.match(board, /^ruleAlertList = Grid\(_template\(\$\/data\/ruleCards, ruleCard\), minWidth=320, after=ruleAdd\)$/m)
   assert.match(board, /^ruleAdd = AddCard\("Add alert with AI", Event\("compose", \{text: "Add an alert: /m)
-  assert.match(board, /^alertsHead = Heading\("Alerts", 2, /m)
+  assert.match(board, /^alertsHead = Heading\("Alert rules", 2, /m)
   assert.equal(board.match(/Add alert with AI/g).length, 1)
 })
 

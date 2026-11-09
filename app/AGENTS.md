@@ -80,49 +80,40 @@ Speak of them as orders and sales, not as invoices.
 Every alert works the same way. Follow this section rather than inventing a
 variant for one alert.
 
-**What an alert is.** A condition the desk watches by itself; when it is
-true the alert has *triggered*. Alerts come from two sources and look alike:
+**Rules and events.** An *alert rule* is a standing setting: a condition
+the desk checks by itself. When the condition holds, the rule is *met* and
+an *event* (a to-do) joins the action list. The two must never read alike:
 
-- *From PayPal*: each dispute, open or resolved in the last 30 days. The
-  module reads them from PayPal. You cannot add, change or delete one; it
-  leaves the board 30 days after PayPal resolves it.
-- *Rules*: what the person asked to watch, kept in `data/alerts.json`
+- *Rule card* (the *Alert rules* grid): the rule's name, its condition as a
+  muted sentence under it ("The store's refund rate rises more than 1.5 pts week over
+  week."), then a small status line: a badge *Met now* (amber), *Not met*
+  (grey) or *Can't check* (grey), and the current figure in a caption. No
+  emoji, no big figure, no analysis. *Edit* and *Delete* show on hover.
+- *Event* (the action list): an emoji, then what happened, with the figure
+  ("Refund rate rose to 6.4% (+4.3 pts)"); under it, the rule it came from
+  ("Alert rule: Refund rate jump"); then the AI's conclusion or that it is
+  pending; *Ask AI* and *Mark done*.
+
+Rules come from two places:
+
+- *Built in*: "PayPal disputes", first in the grid: a buyer opens a dispute
+  or a chargeback. Each open dispute is an event. It cannot be deleted:
+  asked to, say so and offer to mark its events done.
+- *Yours*: what the person asked to watch, kept in `data/alerts.json`
   (format under *Files you write*). With no such file the desk watches the
   built-in "Refund rate jump" rule.
 
-**How a card looks.** The *Actions* tab shows the action list first (open
-to-dos as cards, then done ones as plain rows), then the *Alerts* heading
-("Checked every 5 minutes · …"), then the alerts as cards in a grid, as many columns
-as fit: PayPal's first, then the rules, then a dashed card with a plus
-(tooltip *Add alert with AI*) that ends the grid. Every alert card has the
-same parts, top to bottom:
-
-1. A bell icon, the title, then a status badge: *Triggered* (amber), *OK* (green) or
-   *Can't check* (grey) for a rule; for a dispute, what the merchant must
-   do and how soon (red when 3 days or less remain).
-2. One caption line: the rule in words, or the dispute id and the day it
-   was opened. Nothing else: the section already says where alerts come
-   from.
-3. The figure: what it reads (the store, a product, a country), the value,
-   and its change on the week before, green or red by whether that
-   direction is good.
-4. A note: the AI's conclusion, or that the analysis is pending or
-   running. It is empty while the alert is quiet.
-5. A bar that appears in the top-right corner on hover: *Edit* and
-   *Delete* on a rule, *Ask AI* on a dispute.
-
-A to-do and an alert must never read alike: a to-do is a task, its title
-starts with a verb ("Look into the "Refund rate jump" alert", "Respond to
-dispute …") and its next line says where it came from ("From alert: …");
-an alert is a rule, named by what it watches, with the bell. Keep that
-when you add a kind of to-do or change the templates.
-
-The module fills every part from the rule and the data. Adding, changing
-or deleting an alert never needs `app.a2ui` edited: never add a component,
-colour or layout for one alert. If the person wants alert cards to look
-different, change the shared card templates (`ruleCard`, `paypalCard`), so
+**How the tab looks.** The *Actions* tab shows the open events as cards,
+then done ones as plain rows, then the *Alert rules* heading ("The desk
+checks these every 5 minutes · …"), then the rule cards in a grid, as many
+columns as fit, ended by a dashed card with a plus (tooltip *Add alert with
+AI*). The module fills every part from the rules and the data. Adding,
+changing or deleting a rule never needs `app.a2ui` edited: never add a
+component, colour or layout for one rule. If the person wants the cards to
+look different, change the shared templates (`ruleCard`, `todoCard`), so
 every card keeps one style. The add card stays the grid's last cell
-(`after=ruleAdd`); never put an add button anywhere else.
+(`after=ruleAdd`); never put an add button anywhere else. A new kind of
+event keeps the event shape: an emoji, what happened, where it came from.
 
 **Add.** The plus card writes a request into the chat box for the
 person to edit and send; they may also just ask ("tell me when a
@@ -130,7 +121,7 @@ product's refunds go above 10%", "warn me if weekly sales drop under
 $20k"). Turn the request into rules in `data/alerts.json`, one rule per
 thing watched, and say back in one sentence what each rule watches. The
 card appears within seconds with its current figure; tell the person
-whether it is triggered right now. Ask for a figure only if the request has
+whether it is met right now. Ask for a figure only if the request has
 none and no sensible default fits (refund rate up 1.5 pts, a product's
 refund rate above 10%, sales down 20%). Use a plain rule when one says
 it; when it cannot (two weeks running, a longer window, a figure against
@@ -143,8 +134,8 @@ person asked to drop it.
 **When it triggers.** The module checks every rule on each sync (every 5
 minutes), and within about 10 seconds of `data/alerts.json` or
 `data/findings.json` changing. A rule reads the last 7 days, ending
-yesterday, against the 7 before. When it triggers, three things happen: the
-card turns *Triggered*, a to-do "Look into the "<name>" alert" joins the action list, and
+yesterday, against the 7 before. When it is met, three things happen: the
+card shows *Met now*, an event saying what happened joins the action list, and
 the module starts an agent run in this folder to analyze it, once per
 alert and week, again after 6 hours if that run wrote no finding.
 
@@ -152,7 +143,7 @@ alert and week, again after 6 hours if that run wrote no finding.
 still `pending`, analyze it as for *Explain a change*. For a sales, orders
 or units alert, use `trends` and `week` in `data/state.json`, and
 `data/refunds.json` for the orders. Write a finding with the alert's `id`
-as `alertId` and its `week`; the card's note and the to-do then carry the
+as `alertId` and its `week`; the event then carries the
 conclusion. A run the module started has no one to confirm anything: read,
 write the finding, and change nothing on PayPal.
 
@@ -180,7 +171,7 @@ to mark its to-do done.
 
 **Mark done.** *Mark done* acts on a to-do, not on the alert. On a triggered
 alert's to-do it moves the to-do to the done list for 7 days (*Undo* in its
-*⋯* menu reopens it); the card still shows *Triggered* while the condition
+*⋯* menu reopens it); the card still shows *Met now* while the condition
 holds, and the to-do is open again after the 7 days if it still does. To
 stop watching something, delete the alert.
 
@@ -298,7 +289,8 @@ missing.
 | `week.refundsNote` | The Refunds card subtitle |
 | `week.ask.net`, `.orders`, `.aov`, `.refunds`, `.all` | What a card's *Ask AI to analyze*, and the week's *Ask AI to analyze all changes*, draft in the composer |
 | `needs` | The first three `cases` |
-| `alerts` | The rule cards: `{id, name, rule, summary, subject, value, delta, trend, better, reading, week, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `status` is `Triggered`, `OK` or `Can't check`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
+| `ruleCards` | The *Alert rules* grid, the built-in PayPal disputes rule first: `{id, name, condition, met, status, tone, statusLine, editAsk, deleteAsk}`; `status` is `Met now`, `Not met` or `Can't check` |
+| `alerts` | Your rules as checked: `{id, name, rule, condition, headline, summary, subject, value, delta, trend, better, reading, week, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
 | `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |

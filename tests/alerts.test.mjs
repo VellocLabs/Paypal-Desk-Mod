@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { storeOrder as order } from './fixtures.mjs'
-import { checkRules, disputeAlerts, ruleText } from '../lib/alerts.js'
+import { checkRules, conditionText, disputeAlerts, ruleText } from '../lib/alerts.js'
 
 /** Nov 3–9 against Oct 27 – Nov 2: chargers refunded half the time this week, earbuds steady, Canada fading. */
 function weekOrders() {
@@ -89,4 +89,10 @@ test('disputes are alert cards: open ones first, a near deadline in red, resolve
   assert.match(first.ask, /^Work this case \(dispute:PP-D-1\)/)
   assert.equal(cards[1].rule, 'Chargeback PP-D-2 · opened Nov 2')
   assert.equal(first.summary, 'Dispute PP-D-1 · opened Nov 5')
+})
+
+test('a rule card states its condition as a sentence', () => {
+  assert.equal(conditionText({ metric: 'refund_rate', riseAbove: 1.5 }), "The store's refund rate rises more than 1.5 pts week over week.")
+  assert.equal(conditionText({ metric: 'refund_rate', scope: 'any_product', above: 10 }), "Any product's refund rate is above 10.0% over the last 7 days.")
+  assert.equal(conditionText({ metric: 'net_sales', below: 20000, dropAbove: 20 }), "The store's net sales are below $20,000 over the last 7 days or fall more than 20% week over week.")
 })
