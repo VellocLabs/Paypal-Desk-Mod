@@ -32,37 +32,12 @@
     "topProducts": [],
     "latest": []
   },
-  "month": {
+  "trends": {
     "range": "Waiting for the first sync",
-    "kpis": {
-      "net": {
-        "label": "Net",
-        "value": "—",
-        "trendValue": "",
-        "trend": "flat"
-      },
-      "orders": {
-        "label": "Count",
-        "value": "—",
-        "trendValue": "",
-        "trend": "flat"
-      },
-      "aov": {
-        "label": "AOV",
-        "value": "—",
-        "trendValue": "",
-        "trend": "flat"
-      },
-      "refunds": {
-        "label": "Rate",
-        "value": "—",
-        "trendValue": "",
-        "trend": "flat"
-      }
-    },
-    "byCountry": [],
-    "productCountry": [],
-    "products": []
+    "ask": "",
+    "daily": [],
+    "countryWeekly": [],
+    "movers": []
   },
   "salesNote": "",
   "summary": {

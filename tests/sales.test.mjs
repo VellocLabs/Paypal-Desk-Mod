@@ -1,13 +1,13 @@
 /**
  * The sales board: which invoice rows are store orders, how a line's share
- * of an order is priced, the 7- and 30-day windows ending yesterday, and the
+ * of an order is priced, the 7-day and 4-week windows ending yesterday, and the
  * figures, charts and rows the dashboard binds.
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { storeOrder as order, storeRow, transactionRow } from './fixtures.mjs'
 import { makeOrder } from '../lib/orders.js'
-import { change, compactDollars, latestOrders, lineCents, paymentOrders, readStoreRow, salesBoard, weekAsks, windowTotals } from '../lib/sales.js'
+import { change, compactDollars, latestOrders, lineCents, paymentOrders, productMovers, readStoreRow, salesBoard, trendDays, weekAsks, windowTotals } from '../lib/sales.js'
 
 test('a paid invoice numbered PD-YYYYMMDD-NNN is a store order: PayPal gives amount and status, the order book the rest', () => {
   assert.equal(readStoreRow({ invoice_id: 'INV2-X', invoice_number: '0001', status: 'PAID', amount: '10.00' }), null)
@@ -100,7 +100,7 @@ test('the formats: compact dollars from $10K, a change with one decimal and a de
   assert.deepEqual(change(5, 0), { trendValue: '', trend: 'flat' })
 })
 
-test('the board: last 7 days against the 7 before, 30-day totals, both ending yesterday', () => {
+test('the board: last 7 days against the 7 before, and the last 4 weeks, both ending yesterday', () => {
   const orders = [
     order({ date: '2026-11-09', value: '129.00', lines: [['AUD-BUDS', 1]], name: ['Mia', 'Clark'] }),
     order({ date: '2026-11-09', value: '24.00', lines: [['CAB-C2C', 2]], country: 'GB' }),
@@ -128,13 +128,23 @@ test('the board: last 7 days against the 7 before, 30-day totals, both ending ye
   assert.equal(w.latest[1].items, 'USB-C cable ×2')
   assert.equal(w.latest[4].items, 'Monitor arm +1')
 
-  const m = board.month
-  assert.equal(m.range, 'Oct 11 – Nov 9, 2026 · totals')
-  assert.equal(m.kpis.orders.value, '4')
-  assert.equal(m.kpis.net.trendValue, '$288 before refunds')
-  assert.deepEqual(m.productCountry[0], { label: 'USB-C cable', US: 1, CA: 0, GB: 2, AU: 0, DE: 0, other: 0 })
-  assert.equal(m.products.length, 4)
-  assert.deepEqual(m.products.map(p => p.units), [3, 1, 1, 1])
+  const t = board.trends
+  assert.equal(t.range, 'Oct 13 – Nov 9, 2026 · $253 net · 4 orders · 12.2% refunded', 'Oct 10 is before the 4 weeks')
+  assert.equal(t.daily.length, 28)
+  assert.deepEqual([t.daily[0].label, t.daily[27].label], ['10/13', '11/9'])
+  assert.deepEqual(t.countryWeekly.map(w => w.label), ['Oct 13', 'Oct 20', 'Oct 27', 'Nov 3'])
+  assert.deepEqual(t.countryWeekly[2], { label: 'Oct 27', US: 100, CA: 0, GB: 0, AU: 0, DE: 0, other: 0 })
+  assert.deepEqual(t.countryWeekly[3], { label: 'Nov 3', US: 129, CA: 35, GB: 24, AU: 0, DE: 0, other: 0 })
+  assert.deepEqual(t.movers.map(m => [m.product, m.units, m.before, m.change]), [
+    ['USB-C to USB-C cable, 2 m', 2, 1, '+1'],
+    ['Noise-cancelling earbuds', 1, 0, '+1'],
+    ['65W GaN USB-C charger', 1, 0, '+1'],
+    ['Monitor arm', 0, 1, '-1'],
+  ])
+  assert.deepEqual(t.daily.at(-1), { label: '11/9', net: 153, orders: 2, netAvg: 22, ordersAvg: 0.4, aov: 62.67, refundRate: 18.6 })
+  const ask = t.ask.split('\n')
+  assert.equal(ask[0], 'Analyze the trends of the last 4 weeks, Oct 13 – Nov 9, 2026, week by week:')
+  assert.equal(ask[2], '- Orders: 0 → 0 → 1 → 3')
   assert.match(board.salesNote, /simulated demo data/)
   assert.ok(Math.abs(board.refundShare - 35 / 188) < 1e-9)
 })
@@ -151,14 +161,34 @@ test('sales by country: whole percent, largest share first, "Other" last, a sliv
   assert.deepEqual(byCountry.map(c => c.color), ['#10b981', '#3b82f6', '#94a3b8'])
 })
 
+test('a trend day: that day, then the 7 days ending it; no 7-day figure before the store has 7 days of orders', () => {
+  const orders = [
+    order({ date: '2026-11-01', value: '70.00', lines: [['CAB-C2C', 1]] }),
+    order({ date: '2026-11-07', value: '30.00', lines: [['CAB-C2C', 1]], refund: { date: '2026-11-08', cents: 1000 } }),
+  ]
+  const days = trendDays(orders, '2026-11-06', '2026-11-08')
+  assert.deepEqual(days.map(d => d.label), ['11/6', '11/7', '11/8'])
+  assert.deepEqual(days[0], { label: '11/6', net: 0, orders: 0, netAvg: null, ordersAvg: null, aov: null, refundRate: null }, 'Nov 1 – Nov 6 is six days')
+  assert.deepEqual(days[1], { label: '11/7', net: 30, orders: 1, netAvg: 14, ordersAvg: 0.3, aov: 50, refundRate: 0 })
+  assert.deepEqual(days[2], { label: '11/8', net: -10, orders: 0, netAvg: 3, ordersAvg: 0.1, aov: 30, refundRate: 33.3 }, 'Nov 1 drops out; the refund counts on its day')
+})
+
+test('product movers: the biggest moves in units first, unmoved products left out', () => {
+  const now = { products: [{ sku: 'A', units: 9 }, { sku: 'B', units: 2 }, { sku: 'C', units: 4 }] }
+  const before = { products: [{ sku: 'A', units: 3 }, { sku: 'B', units: 2 }, { sku: 'D', units: 7 }] }
+  assert.deepEqual(productMovers(now, before).map(m => [m.product, m.change]), [['D', '-7'], ['A', '+6'], ['C', '+4']])
+  assert.equal(productMovers(now, before, 1).length, 1)
+})
+
 test('an empty store reads as empty, not as an error', () => {
   const board = salesBoard([], { today: '2026-11-10' })
   assert.equal(board.week.kpis.net.value, '$0')
   assert.equal(board.week.range, 'Nov 3 – Nov 9, 2026')
   assert.deepEqual(board.week.byCountry, [])
   assert.equal(board.week.daily.length, 7)
-  assert.deepEqual(board.month.products, [])
-  assert.equal(board.salesNote, 'No store orders in the last 30 days.')
+  assert.deepEqual(board.trends.movers, [])
+  assert.deepEqual(board.trends.daily.map(d => d.netAvg), Array(28).fill(null), 'no 7-day figure without 7 days of orders')
+  assert.equal(board.salesNote, 'No store orders in the last 4 weeks.')
   assert.deepEqual(latestOrders([], '2026-11-10'), [])
 })
 

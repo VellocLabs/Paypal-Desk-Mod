@@ -30,8 +30,9 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   Velloc runs, with or without the dashboard open. It only reads PayPal.
 - **Dashboard** (`app/app.a2ui`): *Overview* shows the last 7 days: net sales,
   orders, average order value and refunds against the week before, sales by
-  country, daily sales, top products and the latest orders. *Trends* has
-  the last 30 days by country, by product and by product and country.
+  country, daily sales, top products and the latest orders. *Trends* draws
+  the last 4 weeks as line charts: net sales, orders, order value, refund
+  rate and sales by country, with the products that moved most.
   *Actions* lists what needs you, with a red count on its tab, and the desk
   opens on it while anything is open. The agent can reshape it on request ("show refunds by
   week") by editing the file and rebuilding.

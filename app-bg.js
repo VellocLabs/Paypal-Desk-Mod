@@ -651,7 +651,7 @@ export function viewFindings(findings) {
 function emptyState(previous) {
   return {
     week: previous.week,
-    month: previous.month,
+    trends: previous.trends,
     salesNote: previous.salesNote,
     summary: previous.summary || {},
     cases: previous.cases || [],

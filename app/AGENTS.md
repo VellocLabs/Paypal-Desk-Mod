@@ -7,8 +7,10 @@ the module copied in from the person's inbox folder.
 
 The dashboard opens on the store's last 7 days (net sales, orders, average
 order value and refunds against the 7 days before, sales by country, daily
-sales, top products, latest orders), on the *Overview* tab; *Trends* has the totals of the last 30 days by
-country, by product and by product and country. The store's orders are the
+sales, top products, latest orders), on the *Overview* tab; *Trends* has the
+last 4 weeks as line charts (net sales and orders per day with their 7-day
+average, the 7-day order value and refund rate, sales by country per week)
+and the products whose units moved most against the week before. The store's orders are the
 paid invoices numbered `PD-YYYYMMDD-NNN`: PayPal holds the amount, status and
 day; the buyer, country, products and any refund come from the store's order
 book (`lib/orders.js`), which the invoice list does not return. From Nov 8
@@ -130,13 +132,15 @@ missing.
 | --- | --- |
 | `week.range` | The 7-day window and the one it is compared with |
 | `week.kpis.{net,orders,aov,refunds}` | `{label, value, trendValue, trend}` for a `Metric`; `trend` is `up`, `down` or `flat` |
-| `week.byCountry`, `month.byCountry` | `{label, value, color}`: share of sales in whole percent, US, CA, GB, AU, DE and Other; largest first, Other last; under 0.5% left out |
+| `week.byCountry` | `{label, value, color}`: share of sales in whole percent, US, CA, GB, AU, DE and Other; largest first, Other last; under 0.5% left out |
 | `week.daily` | `{label, value}`: net sales per day in dollars, refunds taken off on the day they were made |
 | `week.topProducts` | `{product, units, sales}`, the five best sellers by sales |
 | `week.latest` | `{id, customer, country, items, total, status}`; `status` is `Paid`, `Refunded` or `Partly refunded` |
-| `month.range`, `month.kpis.*` | As for the week, totals only: `trendValue` holds a second figure, not a change |
-| `month.productCountry` | `{label, US, CA, GB, AU, DE, other}`: units of the ten best sellers by country group |
-| `month.products` | `{product, units, sales, US, CA, GB, AU, DE, other}` for every product sold |
+| `trends.range` | The 4-week window, with its net sales, orders and refund rate |
+| `trends.ask` | What the Trends tab's *Ask AI to analyze the trends* drafts: each figure week by week |
+| `trends.daily` | `{label, net, orders, netAvg, ordersAvg, aov, refundRate}` a day: that day's net sales (dollars) and orders, then the 7 days ending that day: average net sales and orders, order value (dollars) and refund rate (percent of sales). The 7-day figures are null until the store has 7 days of orders |
+| `trends.countryWeekly` | `{label, US, CA, GB, AU, DE, other}` a week: sales in dollars by country group; `label` is the week's first day |
+| `trends.movers` | `{product, units, before, change}`: units in the last 7 days against the 7 before, biggest moves first, at most 8 |
 | `salesNote` | The line saying the store's orders are simulated sandbox data |
 | `week.refundsNote` | The Refunds card subtitle |
 | `week.ask.net`, `.orders`, `.aov`, `.refunds`, `.all` | What a card's *Ask AI to analyze*, and the week's *Ask AI to analyze all changes*, draft in the composer |

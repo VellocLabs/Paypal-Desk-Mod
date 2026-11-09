@@ -131,7 +131,7 @@ test('deriveState turns the reads into the sales board and cases, most urgent fi
   assert.equal(state.week.kpis.orders.value, '2')
   assert.equal(state.week.kpis.refunds.value, '30.0%')
   assert.deepEqual(state.week.byCountry.map(c => c.label), ['United States', 'Germany'])
-  assert.equal(state.month.products.length, 4)
+  assert.equal(state.trends.daily.length, 28)
   assert.deepEqual(state.disputes.map(d => d.id), ['PP-D-1', 'PP-D-2'])
   assert.equal(state.summary.casesNote, '6 open, most urgent first')
   assert.equal(state.summary.disputesNote, '1 open of 2')
@@ -276,13 +276,13 @@ test('the first sync reads every invoice page; later ones stop at a page with no
   assert.deepEqual(pages(), [1, 2, 3])
   assert.equal(Object.keys(world.store[ORDERS_KEY].orders).length, 250)
   assert.equal(world.store[ORDERS_KEY].fullAt, NOW)
-  assert.equal(world.state.value.month.kpis.orders.value, '250')
+  assert.match(world.state.value.trends.range, / 250 orders /)
 
   world.calls.length = 0
   rows.unshift(storeRow({ date: day(-1).slice(0, 10), value: '25.00' }))
   await syncOnce(world.$, { now: NOW + 5 * 60_000 })
   assert.deepEqual(pages(), [1, 2], 'page 1 brought a new order, page 2 nothing new')
-  assert.equal(world.state.value.month.kpis.orders.value, '251')
+  assert.match(world.state.value.trends.range, / 251 orders /)
 
   world.calls.length = 0
   await syncOnce(world.$, { now: NOW + 10 * 60_000 })
