@@ -147,7 +147,7 @@ test('deriveState turns the reads into the sales board and cases, most urgent fi
   assert.equal(state.cases[4].title, 'Refund rate rose to 30.0% (+30.0 pts)')
   assert.deepEqual(state.cases.map(c => c.source), ['Alert rule: PayPal disputes', 'From PayPal: unpaid invoices', 'From PayPal: recent transactions', 'From PayPal: unpaid invoices', 'Alert rule: Refund rate jump', 'From the inbox folder'])
   assert.deepEqual(state.cases.map(c => c.icon), ['🔔', '🧾', '💳', '🧾', '🔔', '📥'])
-  assert.equal(state.cases[4].detail, 'The AI analysis is pending.')
+  assert.equal(state.cases[4].detail, '', 'no line while the analysis is pending')
   assert.deepEqual(state.ruleCards.map(c => [c.id, c.status, c.statusLine]), [
     ['paypal-disputes', 'Met now', '1 open now · built in'],
     ['refund-jump', 'Met now', 'Last 7 days: 30.0%, +30.0 pts vs week before'],
@@ -710,7 +710,7 @@ test('events carry the emoji and the rule they came from; rule cards are setting
   assert.match(board, /^todoIcon = Text\(\$icon\)$/m)
   assert.match(board, /^todoTitle = Heading\(\$title, 3, \$source\)$/m)
   assert.match(board, /^alertsHead = Heading\("Alert rules", 2, /m)
-  assert.match(board, /^ruleBody = Column\(\[ruleHeading, ruleStatus, ruleBar\]\)$/m)
+  assert.match(board, /^ruleBody = Column\(\[ruleHeading, ruleBar\]\)$/m, 'name and condition only: no met / not met line')
   assert.match(board, /^ruleHeading = Heading\(\$name, 3, \$condition\)$/m)
   assert.doesNotMatch(board, /Icon\("notifications"\)/)
   assert.doesNotMatch(board, /paypalAlertList|paypalCard/, 'a dispute is an event, not a card in the rules grid')

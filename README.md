@@ -56,7 +56,7 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   Below it, the alert rules, as settings: the built-in PayPal disputes
   rule, and the rules you set by asking the AI (a product's refund rate
   above 10%, weekly sales under a floor, a country's orders dropping), each
-  with its condition in words and whether it is met now; the dashed plus
+  with its condition in words; the dashed plus
   card at the end of the grid drafts a new one. A met rule is analyzed by
   the AI
   on its own (`lib/alerts.js` checks the rules). For what a plain rule

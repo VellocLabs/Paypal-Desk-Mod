@@ -86,13 +86,12 @@ an *event* (a to-do) joins the action list. The two must never read alike:
 
 - *Rule card* (the *Alert rules* grid): the rule's name, its condition as a
   muted sentence under it ("The store's refund rate rises more than 1.5 pts week over
-  week."), then a small status line: a badge *Met now* (amber), *Not met*
-  (grey) or *Can't check* (grey), and the current figure in a caption. No
-  emoji, no big figure, no analysis. *Edit* and *Delete* show on hover.
+  week."), and nothing else: no status, no figure, no emoji, no analysis.
+  Whether a rule is met shows as its event in the action list. *Edit* and *Delete* show on hover.
 - *Event* (the action list): an emoji, then what happened, with the figure
   ("Refund rate rose to 6.4% (+4.3 pts)"); under it, the rule it came from
-  ("Alert rule: Refund rate jump"); then the AI's conclusion or that it is
-  pending; *Ask AI* and *Mark done*.
+  ("Alert rule: Refund rate jump"); then the AI's conclusion once there is
+  one (nothing while it is pending); *Ask AI* and *Mark done*.
 
 Rules come from two places:
 
@@ -134,8 +133,8 @@ person asked to drop it.
 **When it triggers.** The module checks every rule on each sync (every 5
 minutes), and within about 10 seconds of `data/alerts.json` or
 `data/findings.json` changing. A rule reads the last 7 days, ending
-yesterday, against the 7 before. When it is met, three things happen: the
-card shows *Met now*, an event saying what happened joins the action list, and
+yesterday, against the 7 before. When it is met, three things happen: an
+event saying what happened joins the action list, and
 the module starts an agent run in this folder to analyze it, once per
 alert and week, again after 6 hours if that run wrote no finding.
 
@@ -171,8 +170,7 @@ to mark its to-do done.
 
 **Mark done.** *Mark done* acts on a to-do, not on the alert. On a triggered
 alert's to-do it moves the to-do to the done list for 7 days (*Undo* in its
-*⋯* menu reopens it); the card still shows *Met now* while the condition
-holds, and the to-do is open again after the 7 days if it still does. To
+*⋯* menu reopens it); the to-do is open again after the 7 days if the rule is still met. To
 stop watching something, delete the alert.
 
 ## Rules
@@ -289,7 +287,7 @@ missing.
 | `week.refundsNote` | The Refunds card subtitle |
 | `week.ask.net`, `.orders`, `.aov`, `.refunds`, `.all` | What a card's *Ask AI to analyze*, and the week's *Ask AI to analyze all changes*, draft in the composer |
 | `needs` | The first three `cases` |
-| `ruleCards` | The *Alert rules* grid, the built-in PayPal disputes rule first: `{id, name, condition, met, status, tone, statusLine, editAsk, deleteAsk}`; `status` is `Met now`, `Not met` or `Can't check` |
+| `ruleCards` | The *Alert rules* grid, the built-in PayPal disputes rule first: `{id, name, condition, met, status, tone, statusLine, editAsk, deleteAsk}`; the card shows `name` and `condition`; `met` counts toward the heading's note |
 | `alerts` | Your rules as checked: `{id, name, rule, condition, headline, summary, subject, value, delta, trend, better, reading, week, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
 | `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |

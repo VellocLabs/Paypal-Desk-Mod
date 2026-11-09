@@ -652,8 +652,8 @@ function todoSummary(cases) {
 export function alertTodos(alerts, findings, now) {
   return alerts.filter(a => a.tripped).map(a => {
     const finding = latestFinding(findings, a)
-    const analysis = finding ? `AI: ${[finding.title, finding.conclusion].filter(Boolean).join('. ')}`
-      : a.analysis === 'analyzing' ? 'The AI is analyzing it now.' : 'The AI analysis is pending.'
+    // Only a conclusion is shown; while the analysis is pending or running the line stays empty.
+    const analysis = finding ? `AI: ${[finding.title, finding.conclusion].filter(Boolean).join('. ')}` : ''
     return {
       id: `alert:${a.id}`,
       kind: 'alert',
