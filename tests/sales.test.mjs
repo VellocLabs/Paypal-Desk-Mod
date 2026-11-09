@@ -116,7 +116,7 @@ test('the board: last 7 days against the 7 before, 30-day totals, both ending ye
   assert.equal(w.refundsNote, '1 refund · $35')
   assert.deepEqual(w.daily.map(d => d.label), ['Tue 11/3', 'Wed 11/4', 'Thu 11/5', 'Fri 11/6', 'Sat 11/7', 'Sun 11/8', 'Mon 11/9'])
   assert.deepEqual(w.daily.map(d => d.value), [35, 0, 0, -35, 0, 0, 153])
-  assert.deepEqual(w.byCountry.map(c => [c.label, c.value]), [['United States', 68.6], ['Canada', 18.6], ['United Kingdom', 12.8]])
+  assert.deepEqual(w.byCountry.map(c => [c.label, c.value]), [['United States 69%', 68.6], ['Canada 19%', 18.6], ['United Kingdom 13%', 12.8]])
   assert.deepEqual(w.topProducts[0], { product: 'Noise-cancelling earbuds', units: '1', sales: '$129' })
   assert.deepEqual(w.latest.map(r => r.status), ['Paid', 'Paid', 'Paid', 'Refunded', 'Paid', 'Paid'])
   assert.equal(w.latest[0].total, '$999.00', 'today\'s order is the newest even though the window ends yesterday')
@@ -134,6 +134,18 @@ test('the board: last 7 days against the 7 before, 30-day totals, both ending ye
   assert.deepEqual(m.products.map(p => p.units), [3, 1, 1, 1])
   assert.match(board.salesNote, /simulated demo data/)
   assert.ok(Math.abs(board.refundShare - 35 / 188) < 1e-9)
+})
+
+test('sales by country: largest share first, "Other" last, each label with its share', () => {
+  const orders = [
+    order({ date: '2026-11-05', value: '60.00', lines: [['CAB-C2C', 1]], country: 'DE' }),
+    order({ date: '2026-11-05', value: '25.00', lines: [['CAB-C2C', 1]], country: 'FR' }),
+    order({ date: '2026-11-06', value: '14.50', lines: [['CAB-C2C', 1]], country: 'US' }),
+    order({ date: '2026-11-06', value: '0.50', lines: [['CAB-C2C', 1]], country: 'CA' }),
+  ]
+  const { byCountry } = salesBoard(orders, { today: '2026-11-10' }).week
+  assert.deepEqual(byCountry.map(c => [c.label, c.value]), [['Germany 60%', 60], ['United States 15%', 14.5], ['Canada <1%', 0.5], ['Other 25%', 25]])
+  assert.deepEqual(byCountry.map(c => c.color), ['#10b981', '#3b82f6', '#8b5cf6', '#94a3b8'])
 })
 
 test('an empty store reads as empty, not as an error', () => {

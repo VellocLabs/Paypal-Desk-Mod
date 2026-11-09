@@ -129,7 +129,7 @@ test('deriveState turns the reads into the sales board and cases, most urgent fi
   assert.equal(state.week.kpis.net.value, '$140')
   assert.equal(state.week.kpis.orders.value, '2')
   assert.equal(state.week.kpis.refunds.value, '30.0%')
-  assert.deepEqual(state.week.byCountry.map(c => c.label), ['United States', 'Germany'])
+  assert.deepEqual(state.week.byCountry.map(c => c.label), ['United States 50%', 'Germany 50%'])
   assert.equal(state.month.products.length, 4)
   assert.deepEqual(state.disputes.map(d => d.id), ['PP-D-1', 'PP-D-2'])
   assert.equal(state.summary.casesNote, '6 open, most urgent first')
