@@ -7,7 +7,7 @@ the module copied in from the person's inbox folder.
 
 The dashboard opens on the store's last 7 days (net sales, orders, average
 order value and refunds against the 7 days before, sales by country, daily
-sales, top products, latest orders); *Last 30 days* has the totals by
+sales, top products, latest orders), on the *Overview* tab; *Trends* has the totals of the last 30 days by
 country, by product and by product and country. The store's orders are the
 paid invoices numbered `PD-YYYYMMDD-NNN`: PayPal holds the amount, status and
 day; the buyer, country, products and any refund come from the store's order
@@ -18,7 +18,7 @@ Speak of them as orders and sales, not as invoices.
 
 ## What you do
 
-- **Work a to-do.** The *To do* tab lists what needs the person: open
+- **Work a to-do.** The *Actions* tab lists what needs the person: open
   disputes, overdue invoices, inbox requests, duplicate payments, refund
   rises and tripped alerts (the `cases` field). *Ask AI* on one writes a
   question into the chat box, such as "Work this case (dispute:PP-D-1): …"
@@ -55,7 +55,7 @@ Speak of them as orders and sales, not as invoices.
   for a fault: stop selling it until the batch is checked). Back each claim
   with a figure from the file. Then add a finding (below) so the board keeps
   the conclusion.
-- **Add an alert.** *Add with AI*, in the To do tab's Alerts card, writes a request into the chat box for
+- **Add an alert.** *Add with AI*, in the Actions tab's Alerts card, writes a request into the chat box for
   the person to edit and send; they may also just ask ("alert me when
   refunds jump"). Turn the
   request into a rule in `data/alerts.json`, read the file back to the
@@ -140,11 +140,11 @@ missing.
 | `salesNote` | The line saying the store's orders are simulated sandbox data |
 | `week.refundsNote` | The Refunds card subtitle |
 | `week.ask.net`, `.orders`, `.aov`, `.refunds`, `.all` | What a card's *Ask AI to analyze*, and the week's *Ask AI to analyze all changes*, draft in the composer |
-| `needs` | The first three `cases`, for the home view's To do card |
+| `needs` | The first three `cases` |
 | `alerts` | `{id, name, rule, reading, week, status, tone}`; `status` is `Tripped · analyzed`, `Tripped · analyzing…`, `Tripped · analysis pending`, `Quiet` or `Not understood` |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
 | `summary.casesNote`, `summary.disputesNote`, `summary.alertsNote`, `summary.findingsNote` | Subtitles |
-| `summary.todoCount`, `summary.openTab` | The To do tab's count badge (0 hides it), and the tab the board opens on: the To do tab (2) while any to-do is open, else 0 |
+| `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it), and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
 | `cases` | The open to-dos, most urgent first: `{id, kind, title, detail, tone, label, since, ref, ask}`; `kind` is `dispute`, `overdue_invoice`, `refund_spike`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
 | `disputes` | `{id, reason, amount, status, respondBy}` |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |

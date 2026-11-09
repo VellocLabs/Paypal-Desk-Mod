@@ -28,11 +28,11 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
 
 - **Background module** (`app-bg.js`): one worker that lives as long as
   Velloc runs, with or without the dashboard open. It only reads PayPal.
-- **Dashboard** (`app/app.a2ui`): *Last 7 days* opens first: net sales,
+- **Dashboard** (`app/app.a2ui`): *Overview* shows the last 7 days: net sales,
   orders, average order value and refunds against the week before, sales by
-  country, daily sales, top products and the latest orders. *Last 30 days*
-  has the totals by country, by product and by product and country. *To do*
-  lists what needs you, with a red count on its tab, and the desk
+  country, daily sales, top products and the latest orders. *Trends* has
+  the last 30 days by country, by product and by product and country.
+  *Actions* lists what needs you, with a red count on its tab, and the desk
   opens on it while anything is open. The agent can reshape it on request ("show refunds by
   week") by editing the file and rebuilding.
 - **Store orders**: an order is a paid invoice numbered `PD-YYYYMMDD-NNN`.
@@ -44,7 +44,7 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   page once an hour (`lib/sales.js` does the figures). A direct payment
   whose invoice id is such a number is an order too, on the day it was
   made, with its refunds as PayPal's Transaction Search lists them.
-- **To do**: open disputes with their response deadline, overdue invoices,
+- **Actions**: open disputes with their response deadline, overdue invoices,
   a refund rise, two payments that look like one, a new request file in
   the inbox folder, and every alert that tripped, with the AI's conclusion.
   *Ask AI* drafts a question about one in the chat box; *Mark done* hides
@@ -152,7 +152,7 @@ few hours, so seed early.
 
 ## Try it
 
-- Open the desk. *Last 7 days* shows the week's sales; *To do* lists the
+- Open the desk. *Overview* shows the week's sales; *Actions* lists the
   overdue invoices and the dispute.
 - Press *Ask AI* on the dispute and send the drafted question. The agent reads it with
   `get_dispute`, explains it, recommends, and calls a tool. The confirmation

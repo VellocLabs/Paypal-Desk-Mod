@@ -53,7 +53,7 @@ export const ANALYSIS_RETRY_MS = 6 * 3_600_000
 const NEEDS_SHOWN = 3
 /** Days a to-do marked done stays hidden; it comes back after them if it is still true. */
 export const DONE_DAYS = 7
-/** The To do tab's index in `app.a2ui`'s Tabs. */
+/** The Actions tab's index in `app.a2ui`'s Tabs. */
 const TODO_TAB = 2
 /** A weekly refund-rate change, in points, that opens a case by itself. */
 const REFUND_CASE_PTS = 1.5
@@ -564,12 +564,12 @@ export function openTodos(cases, handled, today) {
     .slice(0, CASE_CAP)
 }
 
-/** The to-do list and the home view's first few. */
+/** The to-do list and its first few. */
 function todoView(cases) {
   return { cases, needs: cases.slice(0, NEEDS_SHOWN) }
 }
 
-/** The To do tab's count badge and subtitle; `openTab` is the tab the board opens on (the To do tab while any is open). */
+/** The Actions tab's count badge and subtitle; `openTab` is the tab the board opens on (Actions while any to-do is open). */
 function todoSummary(cases) {
   const n = cases.length
   return {
