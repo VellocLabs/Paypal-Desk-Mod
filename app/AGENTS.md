@@ -40,9 +40,9 @@ Speak of them as orders and sales, not as invoices.
   a return request; a return may be one way to settle it. A chargeback is
   the same complaint made through the buyer's card issuer.
 - **Mark a to-do done.** *Mark done* on the board moves a to-do from the
-  open list to the done list below it, with a green *✓ Done* badge, for 7
-  days; if it is still true after them, it is open again. A done to-do's
-  *⋯* menu has *Undo* (open again now, as it was) and *Delete* (off the
+  open list to the done list below it, for 7 days: the same card, its emoji
+  turned to ✅, "Done Nov 9" by its source, and a *⋯* menu in place of the
+  buttons; if it is still true after them, it is open again. The menu has *Undo* (open again now, as it was) and *Delete* (off the
   board for the rest of the 7 days). The board does all three itself. When
   the person asks you to close one, add `{"id": "<its id>", "at":
   "YYYY-MM-DD"}` (today) to `data/handled.json`, a JSON array; create the
@@ -103,7 +103,7 @@ Rules come from two places:
   built-in "Refund rate jump" rule.
 
 **How the tab looks.** The *Actions* tab shows the open events as cards,
-then done ones as plain rows, then the *Alert rules* heading ("The desk
+then done ones as the same cards with a ✅ and a *⋯* menu, then the *Alert rules* heading ("The desk
 checks these every 5 minutes · …"), then the rule cards in a grid, as many
 columns as fit, ended by a dashed card with a plus (tooltip *Add alert with
 AI*). The module fills every part from the rules and the data. Adding,
@@ -293,7 +293,7 @@ missing.
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it), and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
-| `doneCases` | The done list, latest first: `{id, title, detail, source, kind, doneLabel}` (`doneLabel` is "✓ Done Nov 9") |
+| `doneCases` | The done list, latest first: the open card's fields plus `doneNote` ("Alert rule: Refund rate jump · Done Nov 9") and `doneLabel` ("✓ Done Nov 9") |
 | `cases` | The open to-dos, most urgent first: `{id, kind, title, source, detail, tone, label, since, ref, ask}`; `title` starts with a verb, `source` is where it came from ("From alert: …"); `kind` is `dispute`, `overdue_invoice`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |
 

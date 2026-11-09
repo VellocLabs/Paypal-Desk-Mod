@@ -151,7 +151,9 @@ async function changeTodo($, id, to) {
   const before = handled.find(h => h.id === id)
   const state = (await $.app.state.get()) || {}
   const open = Array.isArray(state.cases) ? state.cases : []
-  const todo = open.find(c => c.id === id) || (before && before.todo) || null
+  const shown = (Array.isArray(state.doneCases) ? state.doneCases : []).find(c => c.id === id)
+  const { doneNote: _note, doneLabel: _label, ...shownCard } = shown || {}
+  const todo = open.find(c => c.id === id) || (before && before.todo) || (shown && shownCard.title ? shownCard : null)
   const kept = handled.filter(h => h.id !== id && (!h.at || h.at >= addDays(today, -60)))
   const entry = to === 'open' ? null
     : { id, at: to === 'deleted' && before && before.at ? before.at : today, ...(to === 'deleted' ? { state: 'deleted' } : {}), ...(todo ? { todo } : {}) }
@@ -572,7 +574,9 @@ export function doneTodos(handled, live, today) {
     .flatMap(h => {
       const todo = byId.get(h.id) || h.todo
       if (!todo) return []
-      return [{ id: h.id, title: todo.title, detail: todo.detail || '', source: todo.source || '', kind: todo.kind || '', doneLabel: `✓ Done ${shortDate(h.at)}` }]
+      const { doneNote: _note, doneLabel: _label, ...card } = todo
+      const done = `Done ${shortDate(h.at)}`
+      return [{ ...card, id: h.id, detail: card.detail || '', source: card.source || '', kind: card.kind || '', doneLabel: `✓ ${done}`, doneNote: [card.source, done].filter(Boolean).join(' · ') }]
     })
 }
 

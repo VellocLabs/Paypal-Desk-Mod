@@ -669,7 +669,7 @@ test('mark_done records the day in the handled file and drops the to-do from the
   assert.deepEqual(JSON.parse(files['data/handled.json']), [{ id: 'forever', at: '' }, { id: 'b', at: '2026-11-10', todo: row('b') }], 'entries past 60 days dropped, the id recorded once, with the to-do as it was')
   assert.deepEqual(world.state.value.cases.map(c => c.id), ['a'])
   assert.deepEqual(world.state.value.needs.map(c => c.id), ['a'])
-  assert.deepEqual(world.state.value.doneCases, [{ id: 'b', title: 'b', detail: '', source: '', kind: 'overdue_invoice', doneLabel: '✓ Done Nov 10' }])
+  assert.deepEqual(world.state.value.doneCases, [{ ...row('b'), source: '', doneLabel: '✓ Done Nov 10', doneNote: 'Done Nov 10' }], 'the done card is the open card, as it was')
   assert.deepEqual(world.state.value.summary, { alertsNote: 'n', casesNote: '1 open, most urgent first', todoCount: 1, openTab: 2 })
   assert.deepEqual(await handleAction(world.$, { action: 'mark_done', context: {} }), { handled: false })
 
@@ -689,15 +689,15 @@ test('the done list shows to-dos done within DONE_DAYS, latest first, live when 
   const live = [{ id: 'invoice:x', kind: 'overdue_invoice', title: 'Invoice X overdue 9 days', detail: 'now' }]
   const handled = [
     { id: 'invoice:x', at: '2026-11-05', todo: { id: 'invoice:x', title: 'Invoice X overdue 5 days', detail: 'then' } },
-    { id: 'alert:a', at: '2026-11-08', todo: { id: 'alert:a', kind: 'alert', title: 'Refund rate jump triggered', detail: 'd' } },
+    { id: 'alert:a', at: '2026-11-08', todo: { id: 'alert:a', kind: 'alert', title: 'Refund rate jump triggered', source: 'Alert rule: Refund rate jump', detail: 'd' } },
     { id: 'alert:gone', at: '2026-11-08' },
     { id: 'alert:old', at: '2026-11-01', todo: { title: 'old' } },
     { id: 'alert:del', at: '2026-11-08', state: 'deleted', todo: { title: 'deleted' } },
     'dispute:forever',
   ]
   assert.deepEqual(doneTodos(handled, live, '2026-11-09'), [
-    { id: 'alert:a', title: 'Refund rate jump triggered', detail: 'd', source: '', kind: 'alert', doneLabel: '✓ Done Nov 8' },
-    { id: 'invoice:x', title: 'Invoice X overdue 9 days', detail: 'now', source: '', kind: 'overdue_invoice', doneLabel: '✓ Done Nov 5' },
+    { id: 'alert:a', kind: 'alert', title: 'Refund rate jump triggered', source: 'Alert rule: Refund rate jump', detail: 'd', doneLabel: '✓ Done Nov 8', doneNote: 'Alert rule: Refund rate jump · Done Nov 8' },
+    { id: 'invoice:x', kind: 'overdue_invoice', title: 'Invoice X overdue 9 days', detail: 'now', source: '', doneLabel: '✓ Done Nov 5', doneNote: 'Done Nov 5' },
   ])
   assert.equal(isDone(handled, 'alert:del', '2026-11-09'), true, 'a deleted to-do stays off the open list')
   const state = deriveState({ raw, orders: storeOrders, openInvoices, handled: [{ id: 'invoice:INV2-A', at: '2026-11-10' }], errors: {}, now: NOW })
@@ -714,13 +714,14 @@ test('events carry the emoji and the rule they came from; rule cards are setting
   assert.match(board, /^ruleHeading = Heading\(\$name, 3, \$condition\)$/m)
   assert.doesNotMatch(board, /Icon\("notifications"\)/)
   assert.doesNotMatch(board, /paypalAlertList|paypalCard/, 'a dispute is an event, not a card in the rules grid')
-  assert.match(board, /^doneCard = Row\(/m, 'no card frame: a done to-do steps back')
 })
 
 test('a done to-do shows a green check and a menu with Undo and Delete', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
   assert.match(board, /^todo = Column\(\[todoHead, todoList, doneList, alertsHead/m)
-  assert.match(board, /^doneBadge = Badge\(\$doneLabel, "success"\)$/m)
+  assert.match(board, /^doneCard = Card\(doneRow\)$/m, 'the same card as an open to-do')
+  assert.match(board, /^doneIcon = Text\("✅"\)$/m)
+  assert.match(board, /^doneTitle = Heading\(\$title, 3, \$doneNote\)$/m)
   assert.match(board, /^doneMenu = Menu\("More", \[doneUndo, doneDelete\]\)$/m)
   assert.match(board, /Event\("undo_done", \{id: \$id\}\)/)
   assert.match(board, /Event\("delete_todo", \{id: \$id\}\)/)

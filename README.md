@@ -50,9 +50,9 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   request file in the inbox folder, and every alert rule that is met. Each
   is an event: an emoji, what happened with the figure ("Refund rate rose
   to 6.4%"), the rule it came from and the AI's conclusion. *Ask AI* drafts
-  a question about one in the chat box; *Mark done* moves it to a done list
-  with a green check for 7 days, and it opens again if it is still true; a
-  done one's ⋯ menu can undo it or delete it.
+  a question about one in the chat box; *Mark done* keeps the card as it
+  is for 7 days, with a ✅ in place of its emoji, and it opens again if it is still true; its ⋯
+  menu, in place of the buttons, can undo it or delete it.
   Below it, the alert rules, as settings: the built-in PayPal disputes
   rule, and the rules you set by asking the AI (a product's refund rate
   above 10%, weekly sales under a floor, a country's orders dropping), each
