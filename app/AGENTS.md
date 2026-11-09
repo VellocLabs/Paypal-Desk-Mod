@@ -18,8 +18,12 @@ Speak of them as orders and sales, not as invoices.
 
 ## What you do
 
-- **Work a case.** When the person presses *Work this case*, the action
-  arrives with `id`, `kind` and `ref`. Read the matching row in
+- **Work a to-do.** The *To do* tab lists what needs the person: open
+  disputes, overdue invoices, inbox requests, duplicate payments, refund
+  rises and tripped alerts (the `cases` field). *Ask AI* on one writes a
+  question into the chat box, such as "Work this case (dispute:PP-D-1): …"
+  or, for an alert, "The alert … tripped …"; the person may edit it before
+  sending. Find the row by its id in
   `data/state.json`, then gather the facts with the PayPal tools (`get_dispute`,
   `get_invoice`, `list_transactions`) before you
   say anything. Explain the situation in three or four sentences, give one
@@ -27,10 +31,13 @@ Speak of them as orders and sales, not as invoices.
   Every call that changes the account opens a confirmation; the person decides
   there, so never ask "shall I?" in chat first and never bundle several writes
   into one step.
-- **Close a case.** Once a case is settled, append its `id` to
-  `data/handled.json` (a JSON array of ids; create the file if missing). The
-  module drops handled cases at its next sync. A dispute that PayPal shows as
-  resolved or an invoice that is paid disappears on its own.
+- **Mark a to-do done.** *Mark done* on the board hides a to-do for 7 days;
+  if it is still true after them, it comes back. When the person asks you
+  to close one, add `{"id": "<its id>", "at": "YYYY-MM-DD"}` (today) to
+  `data/handled.json`, a JSON array; create the file if missing and keep
+  the entries in it. A bare id string hides it for good: use that only when
+  asked to. A dispute that PayPal shows as resolved or an invoice that is
+  paid disappears on its own.
 - **Draft from the inbox.** An `invoice_request` case names a file under
   `inbox/`. Read it, build the invoice with `create_invoice` (one line item per
   row or request, the recipient's name and email, a due date), show the person
@@ -48,7 +55,7 @@ Speak of them as orders and sales, not as invoices.
   for a fault: stop selling it until the batch is checked). Back each claim
   with a figure from the file. Then add a finding (below) so the board keeps
   the conclusion.
-- **Add an alert.** *Add with AI* writes a request into the chat box for
+- **Add an alert.** *Add with AI*, in the To do tab's Alerts card, writes a request into the chat box for
   the person to edit and send; they may also just ask ("alert me when
   refunds jump"). Turn the
   request into a rule in `data/alerts.json`, read the file back to the
@@ -64,7 +71,9 @@ Speak of them as orders and sales, not as invoices.
   week; the board shows *Tripped · analyzing…* meanwhile. In that run, or in
   chat when an alert still reads *Tripped · analysis pending*, analyze it as
   for *Explain a change* and write a finding with that alert's `id` as
-  `alertId` and its `week`; the board then shows *Tripped · analyzed*. A run
+  `alertId` and its `week`; the board then shows *Tripped · analyzed*, and
+  the alert's to-do carries the finding's title and conclusion. While a
+  refund alert is set, it replaces the built-in refund to-do. A run
   started by the module has no one to confirm anything: read, write the
   finding, and change nothing on PayPal.
 - **Answer questions over the data.** Figures in chat may come with a chart in
@@ -131,11 +140,12 @@ missing.
 | `salesNote` | The line saying the store's orders are simulated sandbox data |
 | `week.refundsNote` | The Refunds card subtitle |
 | `week.ask.net`, `.orders`, `.aov`, `.refunds`, `.all` | What a card's *Ask AI to analyze*, and the week's *Ask AI to analyze all changes*, draft in the composer |
-| `needs` | The first three `cases` |
+| `needs` | The first three `cases`, for the home view's To do card |
 | `alerts` | `{id, name, rule, reading, week, status, tone}`; `status` is `Tripped · analyzed`, `Tripped · analyzing…`, `Tripped · analysis pending`, `Quiet` or `Not understood` |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
 | `summary.casesNote`, `summary.disputesNote`, `summary.alertsNote`, `summary.findingsNote` | Subtitles |
-| `cases` | `{id, kind, title, detail, tone, label, since, ref}`; `kind` is `dispute`, `overdue_invoice`, `refund_spike`, `duplicate_payment` or `invoice_request` |
+| `summary.todoTab`, `summary.todoCount`, `summary.openTab` | The To do tab's title ("To do (3)"), its count, and the tab the board opens on: the To do tab (2) while any to-do is open, else 0 |
+| `cases` | The open to-dos, most urgent first: `{id, kind, title, detail, tone, label, since, ref, ask}`; `kind` is `dispute`, `overdue_invoice`, `refund_spike`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
 | `disputes` | `{id, reason, amount, status, respondBy}` |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |
 

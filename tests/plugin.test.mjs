@@ -10,7 +10,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { describeCall, isWriteTool, register as registerGuard } from '../hooks/guard.js'
 import {
-  FULL_SCAN_MS, KEEP_DAYS, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
+  DONE_DAYS, FULL_SCAN_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
@@ -31,6 +31,7 @@ test('the manifest declares the app, its background module and the inbox folder'
   assert.ok(existsSync(join(root, app.seed, app.data)))
   assert.ok(existsSync(join(root, app.background.module)))
   assert.ok(app.background.fs.read.every(folder => folder.startsWith('~/')))
+  assert.deepEqual(app.localActions, ['delete_alert', 'dismiss_finding', 'mark_done'])
 })
 
 test('the hooks file names a module inside hooks/, and the server is the one the template scopes to', () => {
@@ -566,9 +567,63 @@ test('after a run the board shows the new finding and the alert as analyzed', as
   const findings = [{ id: 'f-1', alertId: 'a', week: '2026-11-03..2026-11-09', at: '2026-11-10T09:00:00-05:00', title: 'Charger batch', conclusion: 'c' }]
   world.$.fs.exists = async p => p === FINDINGS_FILE
   world.$.fs.read = async () => JSON.stringify({ findings })
-  world.state.value = { alerts: [trippedRow('a')], findings: [], summary: { casesNote: 'x' } }
+  const invoice = { id: 'invoice:INV2-A', kind: 'overdue_invoice', title: 'Invoice 7 is 3 day(s) overdue', detail: 'd', tone: 'warning', label: 'Overdue', since: NOW, ref: 'INV2-A', ask: 'Work this case' }
+  const pending = { id: 'alert:a', kind: 'alert', title: 'Alert a tripped', detail: 'The AI analysis is pending.', tone: 'warning', label: 'Alert', since: NOW, ref: 'a', ask: 'q' }
+  world.state.value = { alerts: [trippedRow('a')], findings: [], cases: [invoice, pending], sync: { at: NOW }, summary: { disputesNote: 'x' } }
   await refreshFindings(world.$)
   assert.equal(world.state.value.alerts[0].status, 'Tripped · analyzed')
   assert.deepEqual(world.state.value.findings.map(f => [f.id, f.source]), [['f-1', 'Automatic analysis']])
-  assert.deepEqual(world.state.value.summary, { casesNote: 'x', findingsNote: 'Newest first', alertsNote: '1 tripped of 1' })
+  assert.deepEqual(world.state.value.cases.map(c => c.id), ['invoice:INV2-A', 'alert:a'])
+  assert.equal(world.state.value.cases[1].detail, '6.3% of sales, +3.1 pts on the week before. AI: Charger batch. c', "the alert's to-do carries the conclusion")
+  assert.deepEqual(world.state.value.summary, {
+    disputesNote: 'x', casesNote: '2 open, most urgent first', todoTab: 'To do (2)', todoCount: 2, openTab: 2, findingsNote: 'Newest first', alertsNote: '1 tripped of 1',
+  })
+})
+
+test('a tripped alert is a to-do with the analysis in it, and replaces the built-in refund to-do', () => {
+  const alertRules = [{ id: 'refund-watch', name: 'Refund rate watch', metric: 'refund_rate', changeAbovePts: 1.5 }]
+  const findings = [{ id: 'f-1', alertId: 'refund-watch', week: '2026-11-03..2026-11-09', at: '2026-11-10T09:00:00-05:00', title: '65W charger: bad batch', conclusion: 'Chargers stop charging.' }]
+  const plain = deriveState({ raw, orders: storeOrders, openInvoices, handled: [], errors: {}, now: NOW })
+  assert.ok(plain.cases.some(c => c.kind === 'refund_spike'))
+  const state = deriveState({ raw, orders: storeOrders, alertRules, findings, openInvoices, handled: [], errors: {}, now: NOW })
+  assert.ok(!state.cases.some(c => c.kind === 'refund_spike'))
+  const todo = state.cases.find(c => c.kind === 'alert')
+  assert.equal(todo.id, 'alert:refund-watch')
+  assert.equal(todo.title, 'Refund rate watch tripped')
+  assert.match(todo.detail, /^30\.0% of sales, \+30\.0 pts on the week before\. AI: 65W charger: bad batch\. Chargers stop charging\.$/)
+  assert.match(todo.ask, /^The alert "Refund rate watch" tripped \(Weekly refund rate changes by more than 1\.5 pts\): 30\.0% of sales/)
+  assert.match(state.cases[0].ask, /^Work this case \(dispute:PP-D-1\): Dispute PP-D-1/)
+  assert.equal(state.cases.length, plain.cases.length)
+  assert.deepEqual([state.summary.todoTab, state.summary.todoCount, state.summary.openTab], [`To do (${state.cases.length})`, state.cases.length, 2])
+  const none = deriveState({ raw: {}, now: NOW })
+  assert.deepEqual([none.summary.todoTab, none.summary.todoCount, none.summary.openTab, none.summary.casesNote], ['To do', 0, 0, 'Nothing needs you right now'])
+})
+
+test('a to-do marked done is hidden for DONE_DAYS and comes back after them; a bare id is hidden for good', () => {
+  assert.equal(DONE_DAYS, 7)
+  const handled = [{ id: 'alert:a', at: '2026-11-03' }, 'dispute:PP-D-1']
+  assert.equal(isDone(handled, 'alert:a', '2026-11-09'), true)
+  assert.equal(isDone(handled, 'alert:a', '2026-11-10'), false, 'a week later it shows again')
+  assert.equal(isDone(handled, 'dispute:PP-D-1', '2027-01-01'), true)
+  assert.equal(isDone(handled, 'invoice:x', '2026-11-09'), false)
+  const doneToday = deriveState({ raw, orders: storeOrders, openInvoices, handled: [{ id: 'invoice:INV2-A', at: '2026-11-10' }], errors: {}, now: NOW })
+  assert.ok(!doneToday.cases.some(c => c.id === 'invoice:INV2-A'))
+  const weekLater = deriveState({ raw, orders: storeOrders, openInvoices, handled: [{ id: 'invoice:INV2-A', at: '2026-11-03' }], errors: {}, now: NOW })
+  assert.ok(weekLater.cases.some(c => c.id === 'invoice:INV2-A'), 'still overdue a week on: back on the list')
+})
+
+test('mark_done records the day in the handled file and drops the to-do from the board at once', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  const files = { 'data/handled.json': JSON.stringify([{ id: 'old', at: '2026-08-01' }, 'forever', { id: 'b', at: '2026-11-01' }]) }
+  world.$.fs.exists = async p => p in files
+  world.$.fs.read = async p => files[p]
+  world.$.fs.write = async (p, text) => { files[p] = text; world.written[p] = text }
+  const row = id => ({ id, kind: 'overdue_invoice', title: id, detail: '', tone: 'warning', label: 'Overdue', since: NOW, ask: '' })
+  world.state.value = { cases: [row('a'), row('b')], needs: [row('a'), row('b')], summary: { alertsNote: 'n' } }
+  assert.deepEqual(await handleAction(world.$, { action: 'mark_done', context: { id: 'b' } }), { handled: true })
+  assert.deepEqual(JSON.parse(files['data/handled.json']), [{ id: 'forever', at: '' }, { id: 'b', at: '2026-11-10' }], 'entries past 60 days dropped, the id recorded once')
+  assert.deepEqual(world.state.value.cases.map(c => c.id), ['a'])
+  assert.deepEqual(world.state.value.needs.map(c => c.id), ['a'])
+  assert.deepEqual(world.state.value.summary, { alertsNote: 'n', casesNote: '1 open, most urgent first', todoTab: 'To do (1)', todoCount: 1, openTab: 2 })
+  assert.deepEqual(await handleAction(world.$, { action: 'mark_done', context: {} }), { handled: false })
 })

@@ -15,10 +15,10 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
 ```
  PayPal MCP server ──▶ background module (resident, every 5 min)
  (sandbox, OAuth)      │ reads invoices, disputes, transactions
-                       │ derives the sales board and the cases
+                       │ derives the sales board and the to-dos
                        ▼
                  app state  ──▶ dashboard (live, partial re-render)
-                       ▲              │ "Work this case"
+                       ▲              │ "Ask AI" on a to-do
                        │              ▼
    ~/Documents/paypal-desk/inbox   session agent ──▶ PayPal MCP tools
    (declared folder, consented)        │ every write is confirmed by you
@@ -31,8 +31,9 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
 - **Dashboard** (`app/app.a2ui`): *Last 7 days* opens first: net sales,
   orders, average order value and refunds against the week before, sales by
   country, daily sales, top products and the latest orders. *Last 30 days*
-  has the totals by country, by product and by product and country. Then
-  Cases and Disputes. The agent can reshape it on request ("show refunds by
+  has the totals by country, by product and by product and country. *To do*
+  lists what needs you, with its count in the tab's title, and the desk
+  opens on it while anything is open. The agent can reshape it on request ("show refunds by
   week") by editing the file and rebuilding.
 - **Store orders**: an order is a paid invoice numbered `PD-YYYYMMDD-NNN`.
   PayPal gives its amount, status and day; the store's order book
@@ -43,9 +44,12 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   page once an hour (`lib/sales.js` does the figures). A direct payment
   whose invoice id is such a number is an order too, on the day it was
   made, with its refunds as PayPal's Transaction Search lists them.
-- **Cases**: open disputes with their response deadline, overdue invoices,
-  a refund spike, two payments that look like one, a new request file in
-  the inbox folder.
+- **To do**: open disputes with their response deadline, overdue invoices,
+  a refund rise, two payments that look like one, a new request file in
+  the inbox folder, and every alert that tripped, with the AI's conclusion.
+  *Ask AI* drafts a question about one in the chat box; *Mark done* hides
+  it for 7 days, and it comes back if it is still true. Below the list:
+  the alert rules (add one with AI, delete one) and all disputes.
 - **Confirmation** (`hooks/guard.js`): a PayPal tool that creates, sends,
   refunds, cancels or accepts anything opens a confirmation dialog, whatever
   the session's permission mode. Reads pass.
@@ -148,9 +152,9 @@ few hours, so seed early.
 
 ## Try it
 
-- Open the desk. *Last 7 days* shows the week's sales; Cases lists the
+- Open the desk. *Last 7 days* shows the week's sales; *To do* lists the
   overdue invoices and the dispute.
-- Press *Work this case* on the dispute. The agent reads it with
+- Press *Ask AI* on the dispute and send the drafted question. The agent reads it with
   `get_dispute`, explains it, recommends, and calls a tool. The confirmation
   dialog names the call; allow or refuse there.
 - Drop `inbox-example.csv` into `~/Documents/paypal-desk/inbox`. Within five

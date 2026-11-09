@@ -51,6 +51,10 @@ export const ANALYSES_KEY = 'analyses'
 /** How long an analysis that ended without a finding waits before it is started again. */
 export const ANALYSIS_RETRY_MS = 6 * 3_600_000
 const NEEDS_SHOWN = 3
+/** Days a to-do marked done stays hidden; it comes back after them if it is still true. */
+export const DONE_DAYS = 7
+/** The To do tab's index in `app.a2ui`'s Tabs. */
+const TODO_TAB = 2
 /** A weekly refund-rate change, in points, that opens a case by itself. */
 const REFUND_CASE_PTS = 1.5
 const SEEN_KEY = 'inbox.seen'
@@ -99,12 +103,14 @@ export function register(on) {
 }
 
 /**
- * The board's local actions: `delete_alert` {id} removes an alert rule and
- * `dismiss_finding` {id} a finding, in their files and on the board at once.
- * Answers {handled: false} for any other action, which then goes to the model.
+ * The board's local actions: `delete_alert` {id} removes an alert rule,
+ * `dismiss_finding` {id} a finding, and `mark_done` {id} hides a to-do for
+ * DONE_DAYS, in their files and on the board at once. Answers
+ * {handled: false} for any other action, which then goes to the model.
  */
 export async function handleAction($, e) {
   const id = e && e.context && typeof e.context.id === 'string' ? e.context.id : ''
+  if (e && e.action === 'mark_done' && id) return markDone($, id)
   const target = e && e.action === 'delete_alert' ? { file: ALERTS_FILE, key: 'alerts' }
     : e && e.action === 'dismiss_finding' ? { file: FINDINGS_FILE, key: 'findings' }
       : null
@@ -118,6 +124,18 @@ export async function handleAction($, e) {
   if (shown.some(item => item.id === id)) {
     await publishState($, state, { ...state, [target.key]: shown.filter(item => item.id !== id) })
   }
+  return { handled: true }
+}
+
+/** Records a to-do as done today in the handled file and drops it from the board. */
+async function markDone($, id) {
+  const today = dateOf(await $.clock.now())
+  const kept = normalizeHandled(await readJsonFile($, HANDLED_FILE))
+    .filter(h => h.id !== id && (!h.at || h.at >= addDays(today, -60)))
+  await $.fs.write(HANDLED_FILE, `${JSON.stringify([...kept, { id, at: today }], null, 2)}\n`)
+  const state = (await $.app.state.get()) || {}
+  const cases = (Array.isArray(state.cases) ? state.cases : []).filter(c => c.id !== id)
+  await publishState($, state, { ...state, ...todoView(cases), summary: { ...(state.summary || {}), ...todoSummary(cases) } })
   return { handled: true }
 }
 
@@ -231,11 +249,15 @@ export async function refreshFindings($) {
   const state = (await $.app.state.get()) || {}
   const findings = listOf(await readJsonFile($, FINDINGS_FILE), 'findings')
   const alerts = (Array.isArray(state.alerts) ? state.alerts : []).map(a => alertWithStatus(a, findings, analyzing))
+  const now = (state.sync && state.sync.at) || (await $.clock.now())
+  const others = (Array.isArray(state.cases) ? state.cases : []).filter(c => c.kind !== 'alert')
+  const cases = openTodos([...others, ...alertTodos(alerts, findings, now)], await readHandled($), dateOf(now))
   await publishState($, state, {
     ...state,
     alerts,
+    ...todoView(cases),
     findings: viewFindings(findings),
-    summary: { ...(state.summary || {}), findingsNote: findingsNote(findings), alertsNote: alertsNote(alerts) },
+    summary: { ...(state.summary || {}), ...todoSummary(cases), findingsNote: findingsNote(findings), alertsNote: alertsNote(alerts) },
   })
 }
 
@@ -469,15 +491,23 @@ async function pullInbox($, inbox) {
   return files
 }
 
-/** The case ids the session agent marked handled, from the app folder's `data/handled.json`. */
+/** The to-dos marked done, from the app folder's `data/handled.json`. */
 async function readHandled($) {
-  try {
-    if (!(await $.fs.exists(HANDLED_FILE))) return []
-    const parsed = JSON.parse(await $.fs.read(HANDLED_FILE, { as: 'text' }))
-    return Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : []
-  } catch {
-    return []
-  }
+  return normalizeHandled(await readJsonFile($, HANDLED_FILE))
+}
+
+/**
+ * Handled entries as {id, at}: `{id, at: 'YYYY-MM-DD'}` is done for DONE_DAYS
+ * from `at`; a bare id string is done for good (at '').
+ */
+export function normalizeHandled(list) {
+  return (Array.isArray(list) ? list : []).flatMap(h => typeof h === 'string' ? [{ id: h, at: '' }]
+    : h && typeof h.id === 'string' ? [{ id: h.id, at: typeof h.at === 'string' ? h.at.slice(0, 10) : '' }] : [])
+}
+
+/** Whether a to-do is hidden on `today`: done for good, or done less than DONE_DAYS ago. */
+export function isDone(handled, id, today) {
+  return normalizeHandled(handled).some(h => h.id === id && (!h.at || today < addDays(h.at, DONE_DAYS)))
 }
 
 // ---- deriving (pure) -------------------------------------------------------
@@ -490,28 +520,28 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
   const { refundShare, ...board } = salesBoard(orders, { today })
   const weeks = refundWeeks(orders, today)
   const refunds = { change: rateChange(weeks.now.rate, weeks.prior.rate), driver: refundDriver(weeks.now, weeks.prior), now: weeks.now, prior: weeks.prior }
-  const cases = deriveCases({ invoices: openInvoices, disputes, transactions, refundShare, refunds, inboxFiles, now })
-    .filter(c => !handled.includes(c.id))
-    .sort((a, b) => toneRank(b.tone) - toneRank(a.tone) || kindRank(b.kind) - kindRank(a.kind) || a.since - b.since)
-    .slice(0, CASE_CAP)
+  const alerts = viewAlerts(checkAlerts(alertRules, orders, today), findings, running)
+  // A refund alert the person set replaces the built-in refund to-do.
+  const watched = alerts.some(a => a.understood)
+  const found = deriveCases({ invoices: openInvoices, disputes, transactions, refundShare, refunds, inboxFiles, now })
+    .filter(c => !(watched && c.kind === 'refund_spike'))
+  const cases = openTodos([...found, ...alertTodos(alerts, findings, now)], handled, today)
   const errorNames = Object.keys(errors)
   const noteParts = [`Synced ${timeOfDay(now)}`]
   if (errorNames.length) noteParts.push(`${errorNames.length} read(s) failed: ${errorNames.join(', ')}`)
   if (unavailable.length) noteParts.push(`not offered by this server: ${unavailable.join(', ')}`)
   if (unread) noteParts.push(`${unread} invoice(s) PayPal's server would not send`)
-  const alerts = viewAlerts(checkAlerts(alertRules, orders, today), findings, running)
   return {
     ...board,
-    needs: cases.slice(0, NEEDS_SHOWN),
+    ...todoView(cases),
     alerts,
     findings: viewFindings(findings),
     summary: {
       alertsNote: alertsNote(alerts),
       findingsNote: findingsNote(findings),
-      casesNote: cases.length === 0 ? 'Nothing needs a decision right now' : `${cases.length} open, most urgent first`,
+      ...todoSummary(cases),
       disputesNote: disputes.length === 0 ? 'No disputes' : `${disputes.filter(d => d.open).length} open of ${disputes.length}`,
     },
-    cases,
     disputes: disputes.slice(0, ROW_CAP).map(viewDispute),
     sync: {
       at: now,
@@ -523,6 +553,52 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
     },
     handled: previous.handled,
   }
+}
+
+/** The to-dos not marked done on `today`, each with the question Ask AI drafts, most urgent first. */
+export function openTodos(cases, handled, today) {
+  return cases
+    .filter(c => !isDone(handled, c.id, today))
+    .map(c => ({ ...c, ask: c.ask || `Work this case (${c.id}): ${c.title}. ${c.detail}` }))
+    .sort((a, b) => toneRank(b.tone) - toneRank(a.tone) || kindRank(b.kind) - kindRank(a.kind) || a.since - b.since)
+    .slice(0, CASE_CAP)
+}
+
+/** The to-do list and the home view's first few. */
+function todoView(cases) {
+  return { cases, needs: cases.slice(0, NEEDS_SHOWN) }
+}
+
+/** The To do tab's title, count and subtitle; `openTab` is the tab the board opens on (the To do tab while any is open). */
+function todoSummary(cases) {
+  const n = cases.length
+  return {
+    casesNote: n === 0 ? 'Nothing needs you right now' : `${n} open, most urgent first`,
+    todoTab: n === 0 ? 'To do' : `To do (${n})`,
+    todoCount: n,
+    openTab: n === 0 ? 0 : TODO_TAB,
+  }
+}
+
+/** A to-do for each tripped alert, its analysis in the detail; the id is the alert's, so done hides it for DONE_DAYS. */
+export function alertTodos(alerts, findings, now) {
+  return alerts.filter(a => a.tripped).map(a => {
+    const finding = [...findings].filter(f => f.alertId === a.id && f.week === a.week)
+      .sort((x, y) => (String(x.at || '') < String(y.at || '') ? 1 : -1))[0]
+    const analysis = finding ? `AI: ${[finding.title, finding.conclusion].filter(Boolean).join('. ')}`
+      : a.status === 'Tripped · analyzing…' ? 'The AI is analyzing it now.' : 'The AI analysis is pending.'
+    return {
+      id: `alert:${a.id}`,
+      kind: 'alert',
+      title: `${a.name} tripped`,
+      detail: `${a.reading}. ${analysis}`,
+      tone: 'warning',
+      label: 'Alert',
+      since: now,
+      ref: a.id,
+      ask: `The alert "${a.name}" tripped (${a.rule}): ${a.reading}. What's behind it, and what should I do?`,
+    }
+  })
 }
 
 /** A file's list under `key`, or none. */
@@ -687,7 +763,7 @@ export function deriveCases({ invoices, disputes, transactions, refundShare = 0,
     const d = refunds.driver
     const lead = d ? ` Most are the ${productName(d.sku)}: ${d.refunds} of ${d.orders} orders${d.reason ? `, "${d.reason}"` : ''}.` : ''
     cases.push({
-      id: `refunds:${refunds.now.from}`,
+      id: 'refunds',
       kind: 'refund_spike',
       title: `Refunds up ${refunds.change.text} this week`,
       detail: `${refunds.now.rate.toFixed(1)}% of the last 7 days' sales were refunded, against ${refunds.prior.rate.toFixed(1)}% the week before.${lead}`,
@@ -698,7 +774,7 @@ export function deriveCases({ invoices, disputes, transactions, refundShare = 0,
     })
   } else if (refundShare > 0.2) {
     cases.push({
-      id: `refunds:${dateOf(now).slice(0, 7)}`,
+      id: 'refunds:high',
       kind: 'refund_spike',
       title: 'Refunds are high this week',
       detail: `${Math.round(refundShare * 100)}% of the last 7 days' sales were refunded. Worth finding the product or customer behind it.`,
@@ -792,6 +868,7 @@ function kindRank(kind) {
     case 'duplicate_payment': return 4
     case 'overdue_invoice': return 3
     case 'refund_spike': return 2
+    case 'alert': return 2
     default: return 1
   }
 }
