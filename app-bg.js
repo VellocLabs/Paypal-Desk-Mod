@@ -46,6 +46,10 @@ export const FINDINGS_FILE = 'data/findings.json'
 /** The refund breakdown the agent reads to explain a change; rewritten when it changes. */
 export const REFUNDS_FILE = 'data/refunds.json'
 const FINDINGS_SHOWN = 5
+/** Which alert weeks had an analysis started, and when: {"<alert id>@<week>": ms}. */
+export const ANALYSES_KEY = 'analyses'
+/** How long an analysis that ended without a finding waits before it is started again. */
+export const ANALYSIS_RETRY_MS = 6 * 3_600_000
 const NEEDS_SHOWN = 3
 /** A weekly refund-rate change, in points, that opens a case by itself. */
 const REFUND_CASE_PTS = 1.5
@@ -170,8 +174,69 @@ export async function syncOnce($, { inbox, now }) {
   const alertRules = listOf(await readJsonFile($, ALERTS_FILE), 'alerts')
   const findings = listOf(await readJsonFile($, FINDINGS_FILE), 'findings')
 
-  const next = deriveState({ previous, raw, orders, alertRules, findings, openInvoices: scan.openInvoices, unread: scan.unread, inboxFiles, handled, errors, unavailable, now })
+  let next = deriveState({ previous, raw, orders, alertRules, findings, running: analyzing, openInvoices: scan.openInvoices, unread: scan.unread, inboxFiles, handled, errors, unavailable, now })
+  if (await startAnalysis($, next.alerts, now, () => refreshFindings($))) {
+    next = { ...next, alerts: next.alerts.map(a => alertWithStatus(a, findings, analyzing)) }
+  }
   await publishState($, previous, next)
+}
+
+/** The alert week being analyzed now, {id, week}, or null. */
+let analyzing = null
+
+/**
+ * Starts an agent run for the first tripped alert whose week has no finding
+ * yet, unless a run is in flight, the host offers no `$.app.analyze`, or that
+ * week was tried within ANALYSIS_RETRY_MS. Does not wait for the run:
+ * answers {run} (settling once `onDone` ran) when it started one, else null.
+ */
+export async function startAnalysis($, alerts, now, onDone) {
+  if (analyzing || typeof $.app.analyze !== 'function') return null
+  const tried = (await $.store.get(ANALYSES_KEY)) || {}
+  const due = (alerts || []).find(a => a.tripped && !a.analyzed && !(now - (tried[`${a.id}@${a.week}`] || 0) < ANALYSIS_RETRY_MS))
+  if (!due) return null
+  const key = `${due.id}@${due.week}`
+  const kept = Object.fromEntries(Object.entries(tried).filter(([, at]) => now - at < 30 * 86_400_000))
+  await $.store.set(ANALYSES_KEY, { ...kept, [key]: now })
+  analyzing = { id: due.id, week: due.week }
+  let answer
+  try {
+    answer = $.app.analyze({ title: `Analyze alert: ${due.name}`, prompt: analysisPrompt(due) })
+  } catch (err) {
+    answer = Promise.reject(err)
+  }
+  const run = Promise.resolve(answer)
+    .then(r => r || { ok: false, reason: 'no answer' }, err => ({ ok: false, reason: err instanceof Error ? err.message : String(err) }))
+    .then(async r => {
+      analyzing = null
+      if (!r.ok) await $.log.warn(`analysis of ${key} ended without a result: ${r.reason}`)
+      await onDone(r)
+    })
+    .catch(async err => { await $.log.warn(`after the analysis of ${key}: ${err instanceof Error ? err.message : String(err)}`) })
+  return { run }
+}
+
+/** What the agent is asked when an alert trips. */
+export function analysisPrompt(a) {
+  return [
+    `The alert "${a.name}" tripped for the week ${a.week}: ${a.rule}; it reads ${a.reading}.`,
+    'Analyze it as AGENTS.md says under "Analyze a tripped alert": read data/refunds.json, find what drives the change and whether it is one product, one country or the whole store.',
+    `Then add one finding to data/findings.json with "alertId": "${a.id}" and "week": "${a.week}", keeping the findings already there.`,
+    'Change nothing on PayPal. End with the title of the finding.',
+  ].join(' ')
+}
+
+/** Republishes findings and alert statuses from the findings file, after an analysis ended. */
+export async function refreshFindings($) {
+  const state = (await $.app.state.get()) || {}
+  const findings = listOf(await readJsonFile($, FINDINGS_FILE), 'findings')
+  const alerts = (Array.isArray(state.alerts) ? state.alerts : []).map(a => alertWithStatus(a, findings, analyzing))
+  await publishState($, state, {
+    ...state,
+    alerts,
+    findings: viewFindings(findings),
+    summary: { ...(state.summary || {}), findingsNote: findingsNote(findings), alertsNote: alertsNote(alerts) },
+  })
 }
 
 /** The last TRANSACTION_DAYS of Transaction Search, every page up to TRANSACTION_PAGES, as {transaction_details}. */
@@ -418,7 +483,7 @@ async function readHandled($) {
 // ---- deriving (pure) -------------------------------------------------------
 
 /** The dashboard state from the reads. Pure: no `$`, so tests can drive it. */
-export function deriveState({ previous = {}, raw = {}, orders = [], alertRules = [], findings = [], openInvoices = [], unread = 0, inboxFiles = [], handled = [], errors = {}, unavailable = [], now }) {
+export function deriveState({ previous = {}, raw = {}, orders = [], alertRules = [], findings = [], running = null, openInvoices = [], unread = 0, inboxFiles = [], handled = [], errors = {}, unavailable = [], now }) {
   const disputes = normalizeDisputes(raw.disputes)
   const transactions = normalizeTransactions(raw.transactions)
   const today = dateOf(now)
@@ -434,7 +499,7 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
   if (errorNames.length) noteParts.push(`${errorNames.length} read(s) failed: ${errorNames.join(', ')}`)
   if (unavailable.length) noteParts.push(`not offered by this server: ${unavailable.join(', ')}`)
   if (unread) noteParts.push(`${unread} invoice(s) PayPal's server would not send`)
-  const alerts = viewAlerts(checkAlerts(alertRules, orders, today), findings)
+  const alerts = viewAlerts(checkAlerts(alertRules, orders, today), findings, running)
   const brief = `${weeklyBrief(orders, today)} ${cases.length === 0 ? 'Nothing needs you right now.' : `${cases.length} ${cases.length === 1 ? 'thing needs' : 'things need'} you.`}`
   const up = refunds.change.pts >= 0
   return {
@@ -448,8 +513,8 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
     alerts,
     findings: viewFindings(findings),
     summary: {
-      alertsNote: alerts.length === 0 ? 'None yet. Ask in chat, e.g. "alert me when refunds jump"' : `${alerts.filter(a => a.status.startsWith('Tripped')).length} tripped of ${alerts.length}`,
-      findingsNote: findings.length === 0 ? 'Conclusions from analyses show up here' : 'Newest first',
+      alertsNote: alertsNote(alerts),
+      findingsNote: findingsNote(findings),
       casesNote: cases.length === 0 ? 'Nothing needs a decision right now' : `${cases.length} open, most urgent first`,
       disputesNote: disputes.length === 0 ? 'No disputes' : `${disputes.filter(d => d.open).length} open of ${disputes.length}`,
     },
@@ -472,14 +537,31 @@ function listOf(doc, key) {
   return doc && Array.isArray(doc[key]) ? doc[key].filter(item => item && typeof item === 'object') : []
 }
 
-/** Checked alerts as board rows: a tripped one says whether this week's analysis is in. */
-export function viewAlerts(checked, findings) {
-  return checked.map(a => {
-    const analyzed = a.status === 'tripped' && findings.some(f => f.alertId === a.id && f.week === a.week)
-    const status = a.status === 'tripped' ? (analyzed ? 'Tripped · analyzed' : 'Tripped · analysis pending') : a.status === 'ok' ? 'Quiet' : 'Not understood'
-    const tone = a.status === 'tripped' ? 'warning' : a.status === 'ok' ? 'success' : 'neutral'
-    return { id: a.id, name: a.name, rule: a.rule, reading: a.reading, week: a.week || '', status, tone }
-  })
+/** Checked alerts as board rows: a tripped one says whether this week's analysis is in, running or pending. */
+export function viewAlerts(checked, findings, running = null) {
+  return checked.map(a => alertWithStatus({
+    id: a.id, name: a.name, rule: a.rule, reading: a.reading, week: a.week || '',
+    tripped: a.status === 'tripped', understood: a.status !== 'unknown',
+  }, findings, running))
+}
+
+/** An alert row with `analyzed`, `status` and `tone` worked out from the findings and the running analysis. */
+export function alertWithStatus(row, findings, running) {
+  const analyzed = Boolean(row.tripped && findings.some(f => f.alertId === row.id && f.week === row.week))
+  const busy = Boolean(row.tripped && !analyzed && running && running.id === row.id && running.week === row.week)
+  const status = !row.understood ? 'Not understood'
+    : !row.tripped ? 'Quiet'
+      : analyzed ? 'Tripped · analyzed'
+        : busy ? 'Tripped · analyzing…' : 'Tripped · analysis pending'
+  return { ...row, analyzed, status, tone: !row.understood ? 'neutral' : row.tripped ? 'warning' : 'success' }
+}
+
+function alertsNote(alerts) {
+  return alerts.length === 0 ? 'None yet. Ask in chat, e.g. "alert me when refunds jump"' : `${alerts.filter(a => a.tripped).length} tripped of ${alerts.length}`
+}
+
+function findingsNote(findings) {
+  return findings.length === 0 ? 'Conclusions from analyses show up here' : 'Newest first'
 }
 
 /** The newest findings as board rows. */

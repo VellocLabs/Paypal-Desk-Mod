@@ -57,11 +57,14 @@ Speak of them as orders and sales, not as invoices.
   none and no sensible default (1.5 pts, 5%) fits. Asked for another metric,
   say this desk checks refund rates only for now. To remove an alert, delete
   its entry; the board's delete button does the same.
-- **Analyze a tripped alert.** An alert whose status reads *Tripped ·
-  analysis pending* has no finding for its week yet. When you see one (on
-  any turn, or when asked), analyze it as for *Explain a change* and write a
-  finding with that alert's `id` as `alertId` and its `week`; the board then
-  shows *Tripped · analyzed*.
+- **Analyze a tripped alert.** When an alert trips, the module starts an
+  agent run in this folder by itself, with a prompt naming the alert and its
+  week; the board shows *Tripped · analyzing…* meanwhile. In that run, or in
+  chat when an alert still reads *Tripped · analysis pending*, analyze it as
+  for *Explain a change* and write a finding with that alert's `id` as
+  `alertId` and its `week`; the board then shows *Tripped · analyzed*. A run
+  started by the module has no one to confirm anything: read, write the
+  finding, and change nothing on PayPal.
 - **Answer questions over the data.** Figures in chat may come with a chart in
   an `<a2ui>` block, but never on the app's own surface id.
 - **Reshape the dashboard when asked.** Load the `a2ui` skill, edit
@@ -127,7 +130,7 @@ missing.
 | `week.brief` | The week in a few sentences, ending with how many cases need the person |
 | `week.refundsNote`, `week.askRefunds` | The Refunds card subtitle, and the question *Ask AI why* drafts |
 | `needs` | The first three `cases` |
-| `alerts` | `{id, name, rule, reading, week, status, tone}`; `status` is `Tripped · analyzed`, `Tripped · analysis pending`, `Quiet` or `Not understood` |
+| `alerts` | `{id, name, rule, reading, week, status, tone}`; `status` is `Tripped · analyzed`, `Tripped · analyzing…`, `Tripped · analysis pending`, `Quiet` or `Not understood` |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
 | `summary.casesNote`, `summary.disputesNote`, `summary.alertsNote`, `summary.findingsNote` | Subtitles |
 | `cases` | `{id, kind, title, detail, tone, label, since, ref}`; `kind` is `dispute`, `overdue_invoice`, `refund_spike`, `duplicate_payment` or `invoice_request` |

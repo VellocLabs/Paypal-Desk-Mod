@@ -10,7 +10,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { describeCall, isWriteTool, register as registerGuard } from '../hooks/guard.js'
 import {
-  FULL_SCAN_MS, KEEP_DAYS, MAX_PAGE_NUMBER, ALERTS_FILE, FINDINGS_FILE, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
+  FULL_SCAN_MS, KEEP_DAYS, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
@@ -517,4 +517,59 @@ test('delete_alert and dismiss_finding change the file and the board at once; ot
   assert.deepEqual(world.state.value.findings, [])
   assert.deepEqual(await handleAction(world.$, { action: 'ask_why', context: { draft: 'Why?' } }), { handled: false })
   assert.deepEqual(await handleAction(world.$, { action: 'delete_alert', context: {} }), { handled: false })
+})
+
+const trippedRow = (id, week = '2026-11-03..2026-11-09') => alertWithStatus({ id, name: `Alert ${id}`, rule: 'Weekly refund rate changes by more than 1.5 pts', reading: '6.3% of sales, +3.1 pts on the week before', week, tripped: true, understood: true }, [], null)
+
+test('a tripped alert with no finding starts one agent run in the app, once per alert week, without waiting for it', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  const asked = []
+  let finish
+  world.$.app.analyze = req => { asked.push(req); return new Promise(r => { finish = r }) }
+  const done = []
+  const quiet = alertWithStatus({ id: 'q', week: 'w', tripped: false, understood: true }, [], null)
+  const analyzed = alertWithStatus({ id: 'x', week: 'w', tripped: true, understood: true }, [{ alertId: 'x', week: 'w' }], null)
+
+  const started = await startAnalysis(world.$, [quiet, analyzed, trippedRow('a'), trippedRow('b')], NOW, r => done.push(r))
+  assert.ok(started && started.run)
+  assert.equal(asked.length, 1)
+  assert.equal(asked[0].title, 'Analyze alert: Alert a')
+  assert.match(asked[0].prompt, /"alertId": "a" and "week": "2026-11-03\.\.2026-11-09"/)
+  assert.match(asked[0].prompt, /Change nothing on PayPal/)
+  assert.deepEqual(world.store[ANALYSES_KEY], { 'a@2026-11-03..2026-11-09': NOW })
+  assert.equal(alertWithStatus(trippedRow('a'), [], { id: 'a', week: '2026-11-03..2026-11-09' }).status, 'Tripped · analyzing…')
+
+  assert.equal(await startAnalysis(world.$, [trippedRow('b')], NOW, () => {}), null, 'one run at a time')
+  finish({ ok: true, text: 'Charger batch' })
+  await started.run
+  assert.deepEqual(done, [{ ok: true, text: 'Charger batch' }])
+
+  assert.equal(await startAnalysis(world.$, [trippedRow('a')], NOW + 1000, () => {}), null, 'the same week is not started again soon')
+  const later = await startAnalysis(world.$, [trippedRow('a')], NOW + ANALYSIS_RETRY_MS, () => {})
+  assert.ok(later, 'tried again once the retry time passed')
+  finish({ ok: false, reason: 'stopped' })
+  await later.run
+  assert.match(world.logs.at(-1), /analysis of a@2026-11-03\.\.2026-11-09 ended without a result: stopped/)
+})
+
+test('no analysis where the host has none, and a throwing analyze ends the run cleanly', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  assert.equal(await startAnalysis(world.$, [trippedRow('a')], NOW, () => {}), null)
+  world.$.app.analyze = () => { throw new Error('agent not declared') }
+  const done = []
+  const started = await startAnalysis(world.$, [trippedRow('a')], NOW, r => done.push(r))
+  await started.run
+  assert.deepEqual(done, [{ ok: false, reason: 'agent not declared' }])
+})
+
+test('after a run the board shows the new finding and the alert as analyzed', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  const findings = [{ id: 'f-1', alertId: 'a', week: '2026-11-03..2026-11-09', at: '2026-11-10T09:00:00-05:00', title: 'Charger batch', conclusion: 'c' }]
+  world.$.fs.exists = async p => p === FINDINGS_FILE
+  world.$.fs.read = async () => JSON.stringify({ findings })
+  world.state.value = { alerts: [trippedRow('a')], findings: [], summary: { casesNote: 'x' } }
+  await refreshFindings(world.$)
+  assert.equal(world.state.value.alerts[0].status, 'Tripped · analyzed')
+  assert.deepEqual(world.state.value.findings.map(f => [f.id, f.source]), [['f-1', 'Automatic analysis']])
+  assert.deepEqual(world.state.value.summary, { casesNote: 'x', findingsNote: 'Newest first', alertsNote: '1 tripped of 1' })
 })
