@@ -144,7 +144,7 @@ missing.
 | `alerts` | `{id, name, rule, reading, week, status, tone}`; `status` is `Tripped · analyzed`, `Tripped · analyzing…`, `Tripped · analysis pending`, `Quiet` or `Not understood` |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
 | `summary.casesNote`, `summary.disputesNote`, `summary.alertsNote`, `summary.findingsNote` | Subtitles |
-| `summary.todoTab`, `summary.todoCount`, `summary.openTab` | The To do tab's title ("To do (3)"), its count, and the tab the board opens on: the To do tab (2) while any to-do is open, else 0 |
+| `summary.todoCount`, `summary.openTab` | The To do tab's count badge (0 hides it), and the tab the board opens on: the To do tab (2) while any to-do is open, else 0 |
 | `cases` | The open to-dos, most urgent first: `{id, kind, title, detail, tone, label, since, ref, ask}`; `kind` is `dispute`, `overdue_invoice`, `refund_spike`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
 | `disputes` | `{id, reason, amount, status, respondBy}` |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |

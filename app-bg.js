@@ -569,12 +569,11 @@ function todoView(cases) {
   return { cases, needs: cases.slice(0, NEEDS_SHOWN) }
 }
 
-/** The To do tab's title, count and subtitle; `openTab` is the tab the board opens on (the To do tab while any is open). */
+/** The To do tab's count badge and subtitle; `openTab` is the tab the board opens on (the To do tab while any is open). */
 function todoSummary(cases) {
   const n = cases.length
   return {
     casesNote: n === 0 ? 'Nothing needs you right now' : `${n} open, most urgent first`,
-    todoTab: n === 0 ? 'To do' : `To do (${n})`,
     todoCount: n,
     openTab: n === 0 ? 0 : TODO_TAB,
   }

@@ -32,7 +32,7 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   orders, average order value and refunds against the week before, sales by
   country, daily sales, top products and the latest orders. *Last 30 days*
   has the totals by country, by product and by product and country. *To do*
-  lists what needs you, with its count in the tab's title, and the desk
+  lists what needs you, with a red count on its tab, and the desk
   opens on it while anything is open. The agent can reshape it on request ("show refunds by
   week") by editing the file and rebuilding.
 - **Store orders**: an order is a paid invoice numbered `PD-YYYYMMDD-NNN`.

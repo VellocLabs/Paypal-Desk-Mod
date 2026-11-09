@@ -576,7 +576,7 @@ test('after a run the board shows the new finding and the alert as analyzed', as
   assert.deepEqual(world.state.value.cases.map(c => c.id), ['invoice:INV2-A', 'alert:a'])
   assert.equal(world.state.value.cases[1].detail, '6.3% of sales, +3.1 pts on the week before. AI: Charger batch. c', "the alert's to-do carries the conclusion")
   assert.deepEqual(world.state.value.summary, {
-    disputesNote: 'x', casesNote: '2 open, most urgent first', todoTab: 'To do (2)', todoCount: 2, openTab: 2, findingsNote: 'Newest first', alertsNote: '1 tripped of 1',
+    disputesNote: 'x', casesNote: '2 open, most urgent first', todoCount: 2, openTab: 2, findingsNote: 'Newest first', alertsNote: '1 tripped of 1',
   })
 })
 
@@ -594,9 +594,9 @@ test('a tripped alert is a to-do with the analysis in it, and replaces the built
   assert.match(todo.ask, /^The alert "Refund rate watch" tripped \(Weekly refund rate changes by more than 1\.5 pts\): 30\.0% of sales/)
   assert.match(state.cases[0].ask, /^Work this case \(dispute:PP-D-1\): Dispute PP-D-1/)
   assert.equal(state.cases.length, plain.cases.length)
-  assert.deepEqual([state.summary.todoTab, state.summary.todoCount, state.summary.openTab], [`To do (${state.cases.length})`, state.cases.length, 2])
+  assert.deepEqual([state.summary.todoCount, state.summary.openTab], [state.cases.length, 2])
   const none = deriveState({ raw: {}, now: NOW })
-  assert.deepEqual([none.summary.todoTab, none.summary.todoCount, none.summary.openTab, none.summary.casesNote], ['To do', 0, 0, 'Nothing needs you right now'])
+  assert.deepEqual([none.summary.todoCount, none.summary.openTab, none.summary.casesNote], [0, 0, 'Nothing needs you right now'])
 })
 
 test('a to-do marked done is hidden for DONE_DAYS and comes back after them; a bare id is hidden for good', () => {
@@ -624,6 +624,6 @@ test('mark_done records the day in the handled file and drops the to-do from the
   assert.deepEqual(JSON.parse(files['data/handled.json']), [{ id: 'forever', at: '' }, { id: 'b', at: '2026-11-10' }], 'entries past 60 days dropped, the id recorded once')
   assert.deepEqual(world.state.value.cases.map(c => c.id), ['a'])
   assert.deepEqual(world.state.value.needs.map(c => c.id), ['a'])
-  assert.deepEqual(world.state.value.summary, { alertsNote: 'n', casesNote: '1 open, most urgent first', todoTab: 'To do (1)', todoCount: 1, openTab: 2 })
+  assert.deepEqual(world.state.value.summary, { alertsNote: 'n', casesNote: '1 open, most urgent first', todoCount: 1, openTab: 2 })
   assert.deepEqual(await handleAction(world.$, { action: 'mark_done', context: {} }), { handled: false })
 })

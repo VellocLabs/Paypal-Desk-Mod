@@ -1,5 +1,5 @@
 surface("app")
-root = Tabs([{title: "Last 7 days", child: week}, {title: "Last 30 days", child: month}, {title: $/data/summary/todoTab, child: todo}])
+root = Tabs([{title: "Last 7 days", child: week}, {title: "Last 30 days", child: month}, {title: "To do", child: todo, badge: $/data/summary/todoCount}], open=$/data/summary/openTab)
 
 week = Column([week_head, week_kpis, week_watch, week_charts, week_tables, week_sales_note, week_sync_note])
 week_head = Heading("Store sales", 1, $/data/week/range, action=Event("compose", {text: $/data/week/ask/all}), actionLabel="Ask AI to analyze all changes")
