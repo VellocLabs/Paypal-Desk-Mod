@@ -14,7 +14,7 @@
  * still a handful of patches.
  */
 import { addDays, dateOf } from './lib/dates.js'
-import { checkAlerts, rateChange, refundBreakdown, refundDriver, refundWeeks, weeklyBrief } from './lib/insights.js'
+import { checkAlerts, rateChange, refundBreakdown, refundDriver, refundWeeks } from './lib/insights.js'
 import { invoiceRowFields, paymentOrders, productName, readStoreRow, salesBoard } from './lib/sales.js'
 
 export const POLL_MS = 5 * 60_000
@@ -500,13 +500,11 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
   if (unavailable.length) noteParts.push(`not offered by this server: ${unavailable.join(', ')}`)
   if (unread) noteParts.push(`${unread} invoice(s) PayPal's server would not send`)
   const alerts = viewAlerts(checkAlerts(alertRules, orders, today), findings, running)
-  const brief = `${weeklyBrief(orders, today)} ${cases.length === 0 ? 'Nothing needs you right now.' : `${cases.length} ${cases.length === 1 ? 'thing needs' : 'things need'} you.`}`
   const up = refunds.change.pts >= 0
   return {
     ...board,
     week: board.week && {
       ...board.week,
-      brief,
       askRefunds: `Why did refunds go ${up ? 'up' : 'down'} ${Math.abs(refunds.change.pts).toFixed(1)} pts in the last 7 days (${board.week.range.split(' · ')[0]})? Is anything unusual?`,
     },
     needs: cases.slice(0, NEEDS_SHOWN),

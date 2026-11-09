@@ -129,7 +129,6 @@ missing.
 | `month.productCountry` | `{label, US, CA, GB, AU, DE, other}`: units of the ten best sellers by country group |
 | `month.products` | `{product, units, sales, US, CA, GB, AU, DE, other}` for every product sold |
 | `salesNote` | The line saying the store's orders are simulated sandbox data |
-| `week.brief` | The week in a few sentences, ending with how many cases need the person |
 | `week.refundsNote`, `week.askRefunds` | The Refunds card subtitle, and the question *Ask AI why* drafts |
 | `needs` | The first three `cases` |
 | `alerts` | `{id, name, rule, reading, week, status, tone}`; `status` is `Tripped · analyzed`, `Tripped · analyzing…`, `Tripped · analysis pending`, `Quiet` or `Not understood` |

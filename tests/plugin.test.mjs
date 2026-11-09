@@ -458,7 +458,7 @@ test('a sync adds the store payments from Transaction Search, every page, and ke
   assert.match(failing.state.value.sync.note, /list_transactions/)
 })
 
-test('the home view: a brief that counts what needs you, the top cases, alerts with their analysis status, and findings', () => {
+test('the home view: the top cases, alerts with their analysis status, and findings', () => {
   const alertRules = [
     { id: 'refund-watch', name: 'Refund rate watch', metric: 'refund_rate', changeAbovePts: 1.5 },
     { id: 'ceiling', name: 'Refund ceiling', metric: 'refund_rate', rateAbovePct: 50 },
@@ -468,7 +468,6 @@ test('the home view: a brief that counts what needs you, the top cases, alerts w
     { id: 'f-0', at: '2026-11-09T09:00:00-05:00', title: 'Older', conclusion: 'x' },
   ]
   const state = deriveState({ raw, orders: storeOrders, alertRules, findings, openInvoices, handled: [], errors: {}, now: NOW })
-  assert.match(state.week.brief, /Refunds are 30\.0% of sales \(\+30\.0 pts\)\. 5 things need you\.$/)
   assert.equal(state.week.askRefunds, 'Why did refunds go up 30.0 pts in the last 7 days (Nov 3 – Nov 9, 2026)? Is anything unusual?')
   assert.equal(state.needs.length, 3)
   assert.deepEqual(state.needs, state.cases.slice(0, 3))

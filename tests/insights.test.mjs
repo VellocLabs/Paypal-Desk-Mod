@@ -1,13 +1,13 @@
 /**
  * The demo's bad-batch story in the order book, and what the desk says
- * about refunds: per-product stats, the weekly brief, the breakdown the
+ * about refunds: per-product stats, the breakdown the
  * agent reads, and the alert rules checked against the week.
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { storeOrder as order } from './fixtures.mjs'
 import { BAD_BATCH, makeOrder, orderNumber } from '../lib/orders.js'
-import { checkAlerts, rateChange, refundBreakdown, refundStats, weeklyBrief } from '../lib/insights.js'
+import { checkAlerts, rateChange, refundBreakdown, refundStats } from '../lib/insights.js'
 
 test('orders already paid keep their content: the story only adds refunds', () => {
   // As the sandbox took them on Nov 8.
@@ -66,13 +66,6 @@ test('refund stats count refunds made in the window against orders placed in it,
   assert.equal(s.reasons.get(BAD_BATCH.reason).refunds, 5)
   assert.deepEqual(rateChange(12.96, 7.7), { pts: 5.3, text: '+5.3 pts', trend: 'up' })
   assert.equal(rateChange(5.1, 5).trend, 'flat')
-})
-
-test('the brief names the sales change, the movers, and the product behind the refund jump', () => {
-  const brief = weeklyBrief(storyOrders(), '2026-11-10')
-  assert.match(brief, /^Net sales fell \d+(\.\d)?% to \$1,175 on 20 orders\./)
-  assert.match(brief, /Refunds are 13\.0% of sales \(\+6\.1 pts\), led by the 65W charger: 5 of 10 orders refunded, "Stops charging after a few days"\./)
-  assert.equal(weeklyBrief([], '2026-11-10'), 'No store orders in the last 7 days.')
 })
 
 test('the breakdown for the agent has four weekly rates, products with the week before, and the refunded orders', () => {
