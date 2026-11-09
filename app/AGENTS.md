@@ -11,7 +11,9 @@ sales, top products, latest orders); *Last 30 days* has the totals by
 country, by product and by product and country. The store's orders are the
 paid invoices numbered `PD-YYYYMMDD-NNN`: PayPal holds the amount, status and
 day; the buyer, country, products and any refund come from the store's order
-book (`lib/orders.js`), which the invoice list does not return.
+book (`lib/orders.js`), which the invoice list does not return. From Nov 8
+on, orders are direct card payments: a completed payment whose invoice id
+is such a number, with its real refunds, read from `list_transactions`.
 Speak of them as orders and sales, not as invoices.
 
 ## What you do

@@ -5,9 +5,9 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { storeOrder as order, storeRow } from './fixtures.mjs'
+import { storeOrder as order, storeRow, transactionRow } from './fixtures.mjs'
 import { makeOrder } from '../lib/orders.js'
-import { change, compactDollars, latestOrders, lineCents, readStoreRow, salesBoard, windowTotals } from '../lib/sales.js'
+import { change, compactDollars, latestOrders, lineCents, paymentOrders, readStoreRow, salesBoard, windowTotals } from '../lib/sales.js'
 
 test('a paid invoice numbered PD-YYYYMMDD-NNN is a store order: PayPal gives amount and status, the order book the rest', () => {
   assert.equal(readStoreRow({ invoice_id: 'INV2-X', invoice_number: '0001', status: 'PAID', amount: '10.00' }), null)
@@ -41,6 +41,27 @@ test('an order shows as refunded only from the refund day on', () => {
   const o = order({ date: '2026-11-03', value: '20.00', refund: { date: '2026-11-12', cents: 2000 } })
   assert.equal(latestOrders([o], '2026-11-10')[0].status, 'Paid')
   assert.equal(latestOrders([o], '2026-11-12')[0].status, 'Refunded')
+})
+
+test('a completed payment carrying a store order number is an order on its own day, with its refunds from PayPal', () => {
+  const rows = [
+    transactionRow({ id: 'TX-1', number: 'PD-20261109-001', at: '2026-11-09T00:21:10Z', value: '69.00' }),
+    transactionRow({ id: 'TX-2', number: 'PD-20261109-002', at: '2026-11-09T00:22:00Z', value: '40.00' }),
+    transactionRow({ id: 'TX-R1', at: '2026-11-11T10:00:00Z', value: '-20.00', code: 'T1107', ref: 'TX-2' }),
+    transactionRow({ id: 'TX-R2', number: 'PD-20261109-002', at: '2026-11-12T10:00:00Z', value: '-30.00', code: 'T1107' }),
+    transactionRow({ id: 'TX-3', number: 'PD-20261109-003', at: '2026-11-09T00:23:00Z', value: '25.00', status: 'P' }),
+    transactionRow({ id: 'TX-4', number: 'INV-77', at: '2026-11-09T00:24:00Z', value: '25.00' }),
+    transactionRow({ id: 'TX-5', at: '2026-11-07T23:06:31Z', value: '5000.00', code: 'T1900' }),
+  ]
+  const orders = paymentOrders(rows)
+  assert.deepEqual(orders.map(o => o.id), ['TX-1', 'TX-2'])
+  const book = makeOrder('PD-20261109-001', '2026-11-09')
+  assert.deepEqual(orders[0], {
+    id: 'TX-1', number: 'PD-20261109-001', date: '2026-11-09', country: book.country, items: book.lines.map(l => [l.sku, l.qty]),
+    cents: 6900, customer: `${book.buyer.first} ${book.buyer.last}`, buyer: book.buyer.email, refund: null,
+  })
+  assert.deepEqual(orders[1].refund, { date: '2026-11-12', cents: 4000 }, 'two refunds, the second on the 12th, capped at the payment')
+  assert.deepEqual(paymentOrders(undefined), [])
 })
 
 test('line shares use catalog prices; an unknown SKU takes what is left', () => {

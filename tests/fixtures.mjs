@@ -45,3 +45,17 @@ export function storeOrder({ date, country = 'US', lines = [['CAB-C2C', 1]], val
     refund,
   }
 }
+
+/** A Transaction Search row; `number` is the store order number carried as the invoice id. */
+export function transactionRow({ id, number, at, value, code = 'T0006', status = 'S', ref }) {
+  const info = {
+    transaction_id: id,
+    transaction_event_code: code,
+    transaction_initiation_date: at,
+    transaction_amount: { currency_code: 'USD', value },
+    transaction_status: status,
+  }
+  if (number) info.invoice_id = number
+  if (ref) info.paypal_reference_id = ref
+  return { transaction_info: info }
+}

@@ -40,7 +40,9 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   follow from the number alone, since PayPal's MCP invoice list returns a
   flat row with no memo, items or recipient. The module keeps 62 days of
   orders in its store, reads only the newest pages on each sync and every
-  page once an hour (`lib/sales.js` does the figures).
+  page once an hour (`lib/sales.js` does the figures). A direct payment
+  whose invoice id is such a number is an order too, on the day it was
+  made, with its refunds as PayPal's Transaction Search lists them.
 - **Cases**: open disputes with their response deadline, overdue invoices,
   a refund spike, two payments that look like one, a new request file in
   the inbox folder.

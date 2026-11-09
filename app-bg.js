@@ -14,7 +14,7 @@
  * still a handful of patches.
  */
 import { addDays, dateOf } from './lib/dates.js'
-import { invoiceRowFields, readStoreRow, salesBoard } from './lib/sales.js'
+import { invoiceRowFields, paymentOrders, readStoreRow, salesBoard } from './lib/sales.js'
 
 export const POLL_MS = 5 * 60_000
 export const SERVER = 'paypal'
@@ -33,6 +33,9 @@ export const FULL_SCAN_MS = 60 * 60_000
 /** Orders older than this many days are not kept. */
 export const KEEP_DAYS = 62
 const TRANSACTION_DAYS = 30
+/** Transaction Search pages one sync reads at most (500 rows each). */
+export const TRANSACTION_PAGES = 10
+export const PAYMENTS_KEY = 'payments.cache'
 const INBOX_EXTENSIONS = ['.csv', '.json', '.txt', '.md']
 const HANDLED_FILE = 'data/handled.json'
 const SEEN_KEY = 'inbox.seen'
@@ -97,18 +100,45 @@ export async function syncOnce($, { inbox, now }) {
   const scan = await scanInvoices($, { now, errors, unavailable })
   const raw = {
     disputes: await read('list_disputes', { page_size: ROW_CAP }),
-    // Transaction Search wants ISO 8601 date-times with seconds; a date alone is a 400.
-    transactions: await read('list_transactions', {
-      start_date: new Date(now - TRANSACTION_DAYS * 86_400_000).toISOString(),
-      end_date: new Date(now).toISOString(),
-      page_size: 500,
-    }),
+    transactions: await readTransactions(read, now),
   }
+  const payments = await storePayments($, raw.transactions, Boolean(errors.list_transactions))
   const inboxFiles = inbox ? await pullInbox($, inbox) : []
   const handled = await readHandled($)
 
-  const next = deriveState({ previous, raw, orders: scan.orders, openInvoices: scan.openInvoices, unread: scan.unread, inboxFiles, handled, errors, unavailable, now })
+  const next = deriveState({ previous, raw, orders: [...scan.orders, ...payments], openInvoices: scan.openInvoices, unread: scan.unread, inboxFiles, handled, errors, unavailable, now })
   await publishState($, previous, next)
+}
+
+/** The last TRANSACTION_DAYS of Transaction Search, every page up to TRANSACTION_PAGES, as {transaction_details}. */
+export async function readTransactions(read, now) {
+  // Transaction Search wants ISO 8601 date-times with seconds; a date alone is a 400.
+  const args = {
+    start_date: new Date(now - TRANSACTION_DAYS * 86_400_000).toISOString(),
+    end_date: new Date(now).toISOString(),
+    page_size: 500,
+  }
+  const first = await read('list_transactions', args)
+  const rows = listItems(first, ['transaction_details', 'transactions', 'items'])
+  const pages = Math.min(TRANSACTION_PAGES, Number((first && first.total_pages) || 1))
+  for (let page = 2; page <= pages; page++) {
+    const more = listItems(await read('list_transactions', { ...args, page }), ['transaction_details', 'transactions', 'items'])
+    if (more.length === 0) break
+    rows.push(...more)
+  }
+  return { transaction_details: rows }
+}
+
+/** The store's direct payments from this read, or the last good read's when this one failed. */
+async function storePayments($, transactions, failed) {
+  if (failed) {
+    const cached = await $.store.get(PAYMENTS_KEY)
+    return Array.isArray(cached) ? cached : []
+  }
+  const orders = paymentOrders(transactions.transaction_details)
+  const cached = await $.store.get(PAYMENTS_KEY)
+  if (JSON.stringify(cached) !== JSON.stringify(orders)) await $.store.set(PAYMENTS_KEY, orders)
+  return orders
 }
 
 /** Publishes `next` as one patch per changed top-level key; `$.app.state.set` where there is no `publish`. */

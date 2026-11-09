@@ -10,10 +10,10 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { describeCall, isWriteTool, register as registerGuard } from '../hooks/guard.js'
 import {
-  FULL_SCAN_MS, KEEP_DAYS, MAX_PAGE_NUMBER, ORDERS_KEY, PAGE_SIZE, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
+  FULL_SCAN_MS, KEEP_DAYS, MAX_PAGE_NUMBER, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
 } from '../app-bg.js'
-import { storeOrder, storeRow } from './fixtures.mjs'
+import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const readJson = path => JSON.parse(readFileSync(join(root, path), 'utf8'))
@@ -437,4 +437,21 @@ test('app.start returns before the first sync ends and arms the timer; app.stop 
   assert.equal(world.state.value.week.kpis.net.value, '$200')
   await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
   assert.equal(cancelled, 1)
+})
+
+test('a sync adds the store payments from Transaction Search, every page, and keeps the last good ones when the read fails', async () => {
+  const sale = (i, page) => transactionRow({ id: `TX-${page}-${i}`, number: `PD-20261108-${String(page * 100 + i).padStart(3, '0')}`, at: '2026-11-08T09:00:00Z', value: '10.00' })
+  const pages = { 1: [sale(1, 1), sale(2, 1)], 2: [sale(1, 2)] }
+  const transactions = ({ page = 1 }) => ({ transaction_details: pages[page] || [], total_pages: 2 })
+  const world = fakeDollar({ answers: { ...toolAnswers, list_invoices: pagesOf(storeRows), list_transactions: transactions } })
+  await syncOnce(world.$, { now: NOW })
+  assert.deepEqual(world.calls.filter(c => c.tool === 'list_transactions').map(c => c.args.page), [undefined, 2])
+  assert.equal(world.state.value.week.kpis.orders.value, '5', 'two invoices and three payments')
+  assert.equal(world.store[PAYMENTS_KEY].length, 3)
+
+  world.calls.length = 0
+  const failing = fakeDollar({ answers: { ...toolAnswers, list_invoices: pagesOf(storeRows), list_transactions: { __error: 'boom' } }, store: world.store })
+  await syncOnce(failing.$, { now: NOW + 5 * 60_000 })
+  assert.equal(failing.state.value.week.kpis.orders.value, '5', 'the cached payments still count')
+  assert.match(failing.state.value.sync.note, /list_transactions/)
 })
