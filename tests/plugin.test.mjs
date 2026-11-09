@@ -659,3 +659,15 @@ test('the board uses only icons the catalog offers', () => {
   assert.ok(used.length > 0)
   assert.deepEqual(used.filter(name => !allowed.has(name)), [])
 })
+
+test('board: no tab repeats its own name as a title; each tab opens on its period or status line', () => {
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  const tabs = [...board.match(/^root = Tabs\(.*$/m)[0].matchAll(/title: "([^"]+)", child: (\w+)/g)]
+  assert.deepEqual(tabs.map(m => m[1]), ['Overview', 'Trends', 'Actions'])
+  for (const [, name, child] of tabs) {
+    const first = board.match(new RegExp(`^${child} = Column\\(\\[(\\w+)`, 'm'))[1]
+    const line = board.match(new RegExp(`^${first} = (.*)$`, 'm'))[1]
+    assert.match(line, /^Heading\(\$\/data\/[\w/]+, 3\b/, `${name} opens on a bound level-3 line`)
+  }
+  assert.doesNotMatch(board, /Heading\("(Store sales|Trends|Actions|Overview)"/)
+})

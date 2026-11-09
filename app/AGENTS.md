@@ -228,13 +228,13 @@ missing.
 
 | Path | Holds |
 | --- | --- |
-| `week.range` | The 7-day window and the one it is compared with |
+| `week.range` | The Overview tab's top line: the 7-day window and the one it is compared with |
 | `week.kpis.{net,orders,aov,refunds}` | `{label, value, trendValue, trend}` for a `Metric`; `trend` is `up`, `down` or `flat` |
 | `week.byCountry` | `{label, value, color}`: share of sales in whole percent, US, CA, GB, AU, DE and Other; largest first, Other last; under 0.5% left out |
 | `week.daily` | `{label, value}`: net sales per day in dollars, refunds taken off on the day they were made |
 | `week.topProducts` | `{product, units, sales}`, the five best sellers by sales |
 | `week.latest` | `{id, customer, country, items, total, status}`; `status` is `Paid`, `Refunded` or `Partly refunded` |
-| `trends.range` | The 4-week window, with its net sales, orders and refund rate |
+| `trends.range` | The Trends tab's top line: the 4-week window, with its net sales, orders and refund rate |
 | `trends.ask` | What the Trends tab's *Ask AI to analyze the trends* drafts: each figure week by week |
 | `trends.daily` | `{label, net, orders, netAvg, ordersAvg, aov, refundRate}` a day: that day's net sales (dollars) and orders, then the 7 days ending that day: average net sales and orders, order value (dollars) and refund rate (percent of sales). The 7-day figures are null until the store has 7 days of orders |
 | `trends.countryWeekly` | `{label, US, CA, GB, AU, DE, other}` a week: sales in dollars by country group; `label` is the week's first day |
@@ -246,7 +246,7 @@ missing.
 | `alerts` | The rule cards: `{id, name, rule, summary, subject, value, delta, trend, better, reading, week, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `status` is `Triggered`, `OK` or `Can't check`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
 | `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
-| `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | Subtitles |
+| `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it), and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
 | `cases` | The open to-dos, most urgent first: `{id, kind, title, detail, tone, label, since, ref, ask}`; `kind` is `dispute`, `overdue_invoice`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |
