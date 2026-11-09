@@ -24,11 +24,12 @@
       "launcher": "hidden",
       "app": {
         "seed": "./app",
-        "seedVersion": 3,
+        "seedVersion": 4,
         "data": "data/state.json",
         "localActions": ["delete_alert", "dismiss_finding"],
         "background": {
           "module": "./app-bg.js",
+          "agent": true,
           "fs": {
             "read": ["~/Documents/paypal-desk/inbox"]
           }
