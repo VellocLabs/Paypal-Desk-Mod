@@ -44,7 +44,7 @@ test('an order shows as refunded only from the refund day on', () => {
   assert.equal(latestOrders([o], '2026-11-12')[0].status, 'Refunded')
 })
 
-test('a completed payment carrying a store order number is an order on its own day, with its refunds from PayPal', () => {
+test('a completed payment carrying a store order number is an order on its own day, with its refunds from PayPal; its currency conversion is not an order', () => {
   const rows = [
     transactionRow({ id: 'TX-1', number: 'PD-20261109-001', at: '2026-11-09T00:21:10Z', value: '69.00' }),
     transactionRow({ id: 'TX-2', number: 'PD-20261109-002', at: '2026-11-09T00:22:00Z', value: '40.00' }),
@@ -53,6 +53,9 @@ test('a completed payment carrying a store order number is an order on its own d
     transactionRow({ id: 'TX-3', number: 'PD-20261109-003', at: '2026-11-09T00:23:00Z', value: '25.00', status: 'P' }),
     transactionRow({ id: 'TX-4', number: 'INV-77', at: '2026-11-09T00:24:00Z', value: '25.00' }),
     transactionRow({ id: 'TX-5', at: '2026-11-07T23:06:31Z', value: '5000.00', code: 'T1900' }),
+    // Each payment in USD is converted to the account's CAD balance: two T0200 rows with its number.
+    transactionRow({ id: 'TX-C1', number: 'PD-20261109-001', at: '2026-11-09T00:21:10Z', value: '-66.84', code: 'T0200', ref: 'TX-1' }),
+    transactionRow({ id: 'TX-C2', number: 'PD-20261109-001', at: '2026-11-09T00:21:10Z', value: '90.89', code: 'T0200', ref: 'TX-1' }),
   ]
   const orders = paymentOrders(rows)
   assert.deepEqual(orders.map(o => o.id), ['TX-1', 'TX-2'])
