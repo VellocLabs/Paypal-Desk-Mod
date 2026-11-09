@@ -598,5 +598,6 @@ function kindRank(kind) {
 }
 
 function timeOfDay(ms) {
-  return new Date(ms).toISOString().slice(11, 16) + ' UTC'
+  const d = new Date(ms)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }

@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CALENDAR, CATALOG } from '../lib/catalog.js'
+import { dateOf } from '../lib/dates.js'
 import {
   DEFAULT_FROM, DEFAULT_REFUND_RATE, DEFAULT_TO, dayRange, generateOrders, invoiceBody, isDate,
   paymentBody, seedingQueue, summarizeOrders,
@@ -35,7 +36,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const journalPath = join(root, '.seed', 'journal.json')
 
 const args = parseArgs(process.argv.slice(2))
-const today = new Date().toISOString().slice(0, 10)
+const today = dateOf(Date.now())
 const from = args.from ?? DEFAULT_FROM
 const to = args.to ?? DEFAULT_TO
 if (!isDate(from) || !isDate(to) || from > to) fail(`--from/--to must be dates with from <= to (got ${from} … ${to}).`)

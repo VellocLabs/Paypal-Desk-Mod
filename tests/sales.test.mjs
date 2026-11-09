@@ -57,9 +57,10 @@ test('a completed payment carrying a store order number is an order on its own d
   assert.deepEqual(orders.map(o => o.id), ['TX-1', 'TX-2'])
   const book = makeOrder('PD-20261109-001', '2026-11-09')
   assert.deepEqual(orders[0], {
-    id: 'TX-1', number: 'PD-20261109-001', date: '2026-11-09', country: book.country, items: book.lines.map(l => [l.sku, l.qty]),
+    id: 'TX-1', number: 'PD-20261109-001', date: '2026-11-08', country: book.country, items: book.lines.map(l => [l.sku, l.qty]),
     cents: 6900, customer: `${book.buyer.first} ${book.buyer.last}`, buyer: book.buyer.email, refund: null,
   })
+  assert.equal(orders[1].date, '2026-11-08', '00:22 UTC on the 9th is the evening of the 8th in Toronto')
   assert.deepEqual(orders[1].refund, { date: '2026-11-12', cents: 4000 }, 'two refunds, the second on the 12th, capped at the payment')
   assert.deepEqual(paymentOrders(undefined), [])
 })

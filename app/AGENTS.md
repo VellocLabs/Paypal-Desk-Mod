@@ -73,5 +73,5 @@ Speak of them as orders and sales, not as invoices.
 | `disputes` | `{id, reason, amount, status, respondBy}` |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |
 
-Both windows end yesterday (UTC): today's orders appear in `week.latest`
+Both windows end yesterday (this machine's local day): today's orders appear in `week.latest`
 but in no total until tomorrow.

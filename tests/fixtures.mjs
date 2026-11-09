@@ -1,4 +1,7 @@
 /** Invoice-list rows and store orders, shared by the tests. */
+
+// The store's day is the machine's local day; the tests pin the zone so they read the same anywhere.
+process.env.TZ = 'America/Toronto'
 import { makeOrder, orderNumber } from '../lib/orders.js'
 
 let seq = 0

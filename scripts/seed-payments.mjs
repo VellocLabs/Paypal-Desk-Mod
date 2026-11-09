@@ -19,6 +19,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { dateOf } from '../lib/dates.js'
 import { makeOrder, orderDateOf, orderNumber } from '../lib/orders.js'
 import { captureOf, checkoutBody, dailyCount, dueRefunds, refundBody } from './lib/payments.mjs'
 import { ApiError, createClient } from './lib/rest.mjs'
@@ -27,7 +28,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const journalPath = join(root, '.seed', 'payments.json')
 
 const args = parseArgs(process.argv.slice(2))
-const today = new Date().toISOString().slice(0, 10)
+const today = dateOf(Date.now())
 const workers = args.workers === undefined ? 4 : Number(args.workers)
 const rpm = args.rpm === undefined ? 120 : Number(args.rpm)
 const limit = args.orders === undefined ? undefined : Number(args.orders)
@@ -44,7 +45,7 @@ const bookOrder = number => {
 }
 const refunds = dueRefunds(journal, bookOrder, today)
 const cents = todo.reduce((sum, o) => sum + o.totalCents, 0)
-console.log(`Today (${today} UTC): ${count} orders in the order book; ${todo.length} to pay now, $${(cents / 100).toFixed(2)}.`)
+console.log(`Today (${today}, local time): ${count} orders in the order book; ${todo.length} to pay now, $${(cents / 100).toFixed(2)}.`)
 console.log(`Refunds due from earlier orders: ${refunds.length}.`)
 
 if (args['dry-run']) {
