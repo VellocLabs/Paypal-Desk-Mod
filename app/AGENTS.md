@@ -90,13 +90,14 @@ true the alert has *triggered*. Alerts come from two sources and look alike:
   (format under *Files you write*). With no such file the desk watches the
   built-in "Refund rate jump" rule.
 
-**How a card looks.** The *Actions* tab shows the action list first, then
-the *Alerts* heading, then the alerts as cards in a grid, as many columns
+**How a card looks.** The *Actions* tab shows the action list first (open
+to-dos as cards, then done ones as plain rows), then the *Alerts* heading
+("Checked every 5 minutes · …"), then the alerts as cards in a grid, as many columns
 as fit: PayPal's first, then the rules, then a dashed card with a plus
 (tooltip *Add alert with AI*) that ends the grid. Every alert card has the
 same parts, top to bottom:
 
-1. The title, then a status badge: *Triggered* (amber), *OK* (green) or
+1. A bell icon, the title, then a status badge: *Triggered* (amber), *OK* (green) or
    *Can't check* (grey) for a rule; for a dispute, what the merchant must
    do and how soon (red when 3 days or less remain).
 2. One caption line: the rule in words, or the dispute id and the day it
@@ -109,6 +110,12 @@ same parts, top to bottom:
    running. It is empty while the alert is quiet.
 5. A bar that appears in the top-right corner on hover: *Edit* and
    *Delete* on a rule, *Ask AI* on a dispute.
+
+A to-do and an alert must never read alike: a to-do is a task, its title
+starts with a verb ("Look into the "Refund rate jump" alert", "Respond to
+dispute …") and its next line says where it came from ("From alert: …");
+an alert is a rule, named by what it watches, with the bell. Keep that
+when you add a kind of to-do or change the templates.
 
 The module fills every part from the rule and the data. Adding, changing
 or deleting an alert never needs `app.a2ui` edited: never add a component,
@@ -125,8 +132,11 @@ thing watched, and say back in one sentence what each rule watches. The
 card appears within seconds with its current figure; tell the person
 whether it is triggered right now. Ask for a figure only if the request has
 none and no sensible default fits (refund rate up 1.5 pts, a product's
-refund rate above 10%, sales down 20%). Asked for something no rule can
-express, say what the desk can watch and offer the nearest rule. Writing
+refund rate above 10%, sales down 20%). Use a plain rule when one says
+it; when it cannot (two weeks running, a longer window, a figure against
+its own average, two conditions together), write a formula rule. Asked for
+something neither can express (the data has no such figure), say what the
+desk can watch and offer the nearest rule. Writing
 the file replaces the built-in rule, so copy it into the file unless the
 person asked to drop it.
 
@@ -134,7 +144,7 @@ person asked to drop it.
 minutes), and within about 10 seconds of `data/alerts.json` or
 `data/findings.json` changing. A rule reads the last 7 days, ending
 yesterday, against the 7 before. When it triggers, three things happen: the
-card turns *Triggered*, a to-do "<name> triggered" joins the action list, and
+card turns *Triggered*, a to-do "Look into the "<name>" alert" joins the action list, and
 the module starts an agent run in this folder to analyze it, once per
 alert and week, again after 6 hours if that run wrote no finding.
 
@@ -215,6 +225,44 @@ Every rule reads the last 7 days (ending yesterday) against the 7 before.
 Give at least one bound; the rule triggers when any of them does. A rule the
 desk cannot read shows as *Can't check*: fix it.
 
+**Formula rules**, for what a plain rule cannot say. The desk reads the
+formula itself (`lib/formula.js`); nothing in it runs as code, and there is
+no other way to add a check: never write JavaScript for an alert.
+
+```json
+{ "id": "stalled", "name": "Stalled product", "each": "product",
+  "when": "units(week(0)) == 0 and units(week(1)) == 0 and units(weeks(8)) > 0",
+  "show": "units(weeks(4))", "unit": "count", "text": "Any product: no units sold 2 weeks running" },
+{ "id": "sales-vs-average", "name": "Sales under half the average",
+  "when": "net(week(0)) < avg(net(week(1)), net(week(2)), net(week(3)), net(week(4))) / 2",
+  "show": "net(week(0))", "unit": "usd", "text": "Store: net sales under half the 4-week average" }
+```
+
+| Field | Holds |
+| --- | --- |
+| `when` | A true/false formula; the rule triggers when it holds |
+| `show` | A number formula: the card's figure, with its change on the same formula a week earlier. Always give one |
+| `unit` | `count` (default), `usd` or `pct`: how `show` is written |
+| `better` | `up` (default) or `down`: which way `show` is good, for its colour |
+| `each` | `store` (default); `product`: each product sold in the last 56 days, or only `sku`; `country`: each country, or only `country`. It triggers when any one does, and the card names it |
+| `text` | The rule in words, `"<who>: <what>"`; the card's caption |
+
+Formula language: numbers, `+ - * /` (dividing by zero gives 0),
+`< <= > >= == !=`, `and or not`, parentheses, and functions:
+
+- time spans, all ending yesterday: `week(k)` the k-th 7 days back (0 = the
+  last 7 days, up to 7), `weeks(n)` the last n weeks together (1–8),
+  `days(n)` the last n days (1–56), `day(k)` one day (0 = yesterday);
+- figures over a span: `units`, `orders`, `net` (dollars, refunds taken
+  off), `sales` (dollars), `refunds` (dollars), `refund_rate` (percent),
+  `aov` (dollars), e.g. `refund_rate(weeks(2))`;
+- `min(…)`, `max(…)`, `avg(…)`, `abs(x)`.
+
+Under `each: "product"` the figures are that product's: guard a test for
+zero sales with a history (`units(weeks(8)) > 0`), or a product never sold
+again would trigger it for weeks. After writing a formula rule, look at its
+card: *Can't check* gives the reason as its caption; fix the formula.
+
 `data/findings.json`, newest anywhere (the board sorts by `at`):
 
 ```json
@@ -255,8 +303,8 @@ missing.
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it), and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
-| `doneCases` | The done list, latest first: `{id, title, detail, kind, doneLabel}` (`doneLabel` is "✓ Done Nov 9") |
-| `cases` | The open to-dos, most urgent first: `{id, kind, title, detail, tone, label, since, ref, ask}`; `kind` is `dispute`, `overdue_invoice`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
+| `doneCases` | The done list, latest first: `{id, title, detail, source, kind, doneLabel}` (`doneLabel` is "✓ Done Nov 9") |
+| `cases` | The open to-dos, most urgent first: `{id, kind, title, source, detail, tone, label, since, ref, ask}`; `title` starts with a verb, `source` is where it came from ("From alert: …"); `kind` is `dispute`, `overdue_invoice`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |
 
 Both windows end yesterday (this machine's local day): today's orders appear in `week.latest`

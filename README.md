@@ -57,7 +57,10 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   under a floor, a country's orders dropping); the dashed plus card at the
   end of the grid drafts that request. Each card shows the figure it
   watches against the week before; a triggered rule is analyzed by the AI
-  on its own (`lib/alerts.js` checks the rules).
+  on its own (`lib/alerts.js` checks the rules). For what a plain rule
+  cannot say (no sales two weeks running, a week under its 4-week average)
+  the AI writes a formula, which the desk reads itself (`lib/formula.js`);
+  no alert runs code.
 - **Confirmation** (`hooks/guard.js`): a PayPal tool that creates, sends,
   refunds, cancels or accepts anything opens a confirmation dialog, whatever
   the session's permission mode. Reads pass.

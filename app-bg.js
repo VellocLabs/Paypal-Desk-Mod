@@ -571,7 +571,7 @@ export function doneTodos(handled, live, today) {
     .flatMap(h => {
       const todo = byId.get(h.id) || h.todo
       if (!todo) return []
-      return [{ id: h.id, title: todo.title, detail: todo.detail || '', kind: todo.kind || '', doneLabel: `✓ Done ${shortDate(h.at)}` }]
+      return [{ id: h.id, title: todo.title, detail: todo.detail || '', source: todo.source || '', kind: todo.kind || '', doneLabel: `✓ Done ${shortDate(h.at)}` }]
     })
 }
 
@@ -655,10 +655,11 @@ export function alertTodos(alerts, findings, now) {
     return {
       id: `alert:${a.id}`,
       kind: 'alert',
-      title: `${a.name} triggered`,
+      title: `Look into the "${a.name}" alert`,
+      source: `From alert: ${a.name}, triggered`,
       detail: `${sentenceCase(a.reading)}. ${analysis}`,
       tone: 'warning',
-      label: 'Alert',
+      label: 'Review',
       since: now,
       ref: a.id,
       ask: a.ask,
@@ -726,7 +727,7 @@ function alertsNote(alerts, paypalAlerts = []) {
   const all = [...(alerts || []), ...(paypalAlerts || [])]
   if (all.length === 0) return 'None yet. Add one with AI, e.g. "any product\'s refund rate above 10%"'
   const live = all.filter(a => a.tripped).length
-  return live === 0 ? `All ${all.length} quiet` : `${live} of ${all.length} need a look`
+  return `Checked every 5 minutes · ${live === 0 ? `all ${all.length} quiet` : `${live} of ${all.length} need a look`}`
 }
 
 function findingsNote(findings) {
@@ -838,7 +839,8 @@ export function deriveCases({ invoices, disputes, transactions, inboxFiles, now 
     cases.push({
       id: `dispute:${d.id}`,
       kind: 'dispute',
-      title: `Dispute ${d.id}: ${d.reason || d.stage || 'open'}`,
+      title: `Respond to dispute ${d.id}: ${d.reason || d.stage || 'open'}`,
+      source: 'From PayPal: a buyer dispute',
       detail: `${d.amount} in dispute${d.transactionId ? ` on transaction ${d.transactionId}` : ''}. ` +
         (daysLeft === null ? 'No response deadline given.' : daysLeft <= 0 ? 'Response overdue.' : `Respond within ${daysLeft} day(s).`),
       tone: daysLeft !== null && daysLeft <= 3 ? 'danger' : 'warning',
@@ -852,7 +854,8 @@ export function deriveCases({ invoices, disputes, transactions, inboxFiles, now 
     cases.push({
       id: `invoice:${inv.id}`,
       kind: 'overdue_invoice',
-      title: `Invoice ${inv.number} is ${inv.overdueDays} day(s) overdue`,
+      title: `Follow up on invoice ${inv.number}, ${inv.overdueDays} day(s) overdue`,
+      source: 'From PayPal: an unpaid invoice',
       detail: `${inv.amount}${inv.recipient ? ` from ${inv.recipient}` : ''}, due ${inv.due.slice(0, 10)}. A reminder or a cancellation needs your decision.`,
       tone: inv.overdueDays > 14 ? 'danger' : 'warning',
       label: inv.overdueDays > 14 ? 'Long overdue' : 'Overdue',
@@ -865,7 +868,8 @@ export function deriveCases({ invoices, disputes, transactions, inboxFiles, now 
     cases.push({
       id: `duplicate:${pair[0].id}:${pair[1].id}`,
       kind: 'duplicate_payment',
-      title: `Two payments of ${money({ value: pair[0].value, currency_code: pair[0].currency })} from ${pair[0].payer || 'one payer'}`,
+      title: `Check two payments of ${money({ value: pair[0].value, currency_code: pair[0].currency })} from ${pair[0].payer || 'one payer'}`,
+      source: 'From PayPal: recent transactions',
       detail: `Transactions ${pair[0].id} and ${pair[1].id} were made within 10 minutes. One may need a refund.`,
       tone: 'warning',
       label: 'Check',
@@ -877,7 +881,8 @@ export function deriveCases({ invoices, disputes, transactions, inboxFiles, now 
     cases.push({
       id: `file:${file.name}`,
       kind: 'invoice_request',
-      title: `New request in the inbox: ${file.name}`,
+      title: `Draft the invoice asked for in ${file.name}`,
+      source: 'From the inbox folder',
       detail: `Copied to inbox/${file.name} in the app's folder. Read it and draft the PayPal invoice it asks for.`,
       tone: 'info',
       label: 'Inbox',

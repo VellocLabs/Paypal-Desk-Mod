@@ -136,7 +136,7 @@ test('deriveState turns the reads into the sales board and cases, most urgent fi
   assert.deepEqual(state.paypalAlerts.map(d => [d.id, d.status]), [['PP-D-1', 'Respond in 2 days'], ['PP-D-2', 'Resolved']])
   assert.deepEqual(state.alerts.map(a => [a.id, a.status, a.value]), [['refund-jump', 'Triggered', '30.0%']])
   assert.equal(state.summary.casesNote, '6 open, most urgent first')
-  assert.equal(state.summary.alertsNote, '2 of 3 need a look')
+  assert.equal(state.summary.alertsNote, 'Checked every 5 minutes · 2 of 3 need a look')
   for (const gone of ['invoices', 'plans', 'series', 'disputes']) assert.equal(state[gone], undefined, gone)
   assert.deepEqual(state.cases.map(c => c.kind), ['dispute', 'overdue_invoice', 'duplicate_payment', 'overdue_invoice', 'alert', 'invoice_request'])
   assert.equal(state.cases[0].id, 'dispute:PP-D-1')
@@ -144,7 +144,9 @@ test('deriveState turns the reads into the sales board and cases, most urgent fi
   assert.equal(state.cases[1].tone, 'danger')
   assert.equal(state.cases[3].id, 'invoice:INV2-B')
   assert.equal(state.cases[3].tone, 'warning')
-  assert.equal(state.cases[4].title, 'Refund rate jump triggered')
+  assert.equal(state.cases[4].title, 'Look into the "Refund rate jump" alert')
+  assert.deepEqual(state.cases.map(c => c.source), ['From PayPal: a buyer dispute', 'From PayPal: an unpaid invoice', 'From PayPal: recent transactions', 'From PayPal: an unpaid invoice', 'From alert: Refund rate jump, triggered', 'From the inbox folder'])
+  assert.ok(state.cases.every(c => /^(Respond|Follow up|Check|Look into|Draft) /.test(c.title)), 'every to-do reads as a task')
   assert.match(state.cases[4].detail, /^Refund rate 30\.0% over Nov 3 – Nov 9, \+30\.0 pts on the week before\. The AI analysis is pending\.$/)
   assert.match(state.cases.at(-1).detail, /inbox\/march\.csv/)
   assert.equal(state.sync.ok, true)
@@ -496,7 +498,7 @@ test('the home view: the top cases, alerts with their analysis status, and findi
   assert.equal(state.alerts[1].note, '')
   assert.deepEqual(state.findings.map(f => [f.id, f.source]), [['f-1', 'Automatic analysis'], ['f-0', 'Asked in chat']])
   assert.equal(state.findings[0].action, 'Suggested: Pause the charger')
-  assert.equal(state.summary.alertsNote, '2 of 4 need a look', 'one tripped rule and one open dispute')
+  assert.equal(state.summary.alertsNote, 'Checked every 5 minutes · 2 of 4 need a look', 'one tripped rule and one open dispute')
 
   const pending = deriveState({ raw, orders: storeOrders, alertRules, findings: [], openInvoices, handled: [], errors: {}, now: NOW })
   assert.deepEqual([pending.alerts[0].analysis, pending.alerts[0].note], ['pending', 'Waiting for the AI to analyze it'])
@@ -601,7 +603,7 @@ test('after a run the board shows the new finding and the alert as analyzed', as
   assert.deepEqual(world.state.value.cases.map(c => c.id), ['invoice:INV2-A', 'alert:a'])
   assert.equal(world.state.value.cases[1].detail, 'Refund rate 6.3% over Nov 3 – Nov 9, +3.1 pts on the week before. AI: Charger batch. c', "the alert's to-do carries the conclusion")
   assert.deepEqual(world.state.value.summary, {
-    disputesNote: 'x', casesNote: '2 open, most urgent first', todoCount: 2, openTab: 2, findingsNote: 'Newest first', alertsNote: '1 of 1 need a look',
+    disputesNote: 'x', casesNote: '2 open, most urgent first', todoCount: 2, openTab: 2, findingsNote: 'Newest first', alertsNote: 'Checked every 5 minutes · 1 of 1 need a look',
   })
 })
 
@@ -626,10 +628,10 @@ test('a tripped alert is a to-do with the analysis in it; with no rule there is 
   const state = deriveState({ raw, orders: storeOrders, alertRules, findings, openInvoices, handled: [], errors: {}, now: NOW })
   const todo = state.cases.find(c => c.kind === 'alert')
   assert.equal(todo.id, 'alert:refund-watch')
-  assert.equal(todo.title, 'Refund rate watch triggered')
+  assert.equal(todo.title, 'Look into the "Refund rate watch" alert')
   assert.match(todo.detail, /^Refund rate 30\.0% over Nov 3 – Nov 9, \+30\.0 pts on the week before\. AI: 65W charger: bad batch\. Chargers stop charging\.$/)
   assert.match(todo.ask, /^The alert "Refund rate watch" \(Store: refund rate up more than 1\.5 pts\) reads refund rate 30\.0%/)
-  assert.match(state.cases[0].ask, /^Work this case \(dispute:PP-D-1\): Dispute PP-D-1/)
+  assert.match(state.cases[0].ask, /^Work this case \(dispute:PP-D-1\): Respond to dispute PP-D-1/)
   assert.equal(state.cases.length, plain.cases.length + 1)
   assert.deepEqual([state.summary.todoCount, state.summary.openTab], [state.cases.length, 2])
   const none = deriveState({ raw: {}, now: NOW })
@@ -661,7 +663,7 @@ test('mark_done records the day in the handled file and drops the to-do from the
   assert.deepEqual(JSON.parse(files['data/handled.json']), [{ id: 'forever', at: '' }, { id: 'b', at: '2026-11-10', todo: row('b') }], 'entries past 60 days dropped, the id recorded once, with the to-do as it was')
   assert.deepEqual(world.state.value.cases.map(c => c.id), ['a'])
   assert.deepEqual(world.state.value.needs.map(c => c.id), ['a'])
-  assert.deepEqual(world.state.value.doneCases, [{ id: 'b', title: 'b', detail: '', kind: 'overdue_invoice', doneLabel: '✓ Done Nov 10' }])
+  assert.deepEqual(world.state.value.doneCases, [{ id: 'b', title: 'b', detail: '', source: '', kind: 'overdue_invoice', doneLabel: '✓ Done Nov 10' }])
   assert.deepEqual(world.state.value.summary, { alertsNote: 'n', casesNote: '1 open, most urgent first', todoCount: 1, openTab: 2 })
   assert.deepEqual(await handleAction(world.$, { action: 'mark_done', context: {} }), { handled: false })
 
@@ -688,12 +690,21 @@ test('the done list shows to-dos done within DONE_DAYS, latest first, live when 
     'dispute:forever',
   ]
   assert.deepEqual(doneTodos(handled, live, '2026-11-09'), [
-    { id: 'alert:a', title: 'Refund rate jump triggered', detail: 'd', kind: 'alert', doneLabel: '✓ Done Nov 8' },
-    { id: 'invoice:x', title: 'Invoice X overdue 9 days', detail: 'now', kind: 'overdue_invoice', doneLabel: '✓ Done Nov 5' },
+    { id: 'alert:a', title: 'Refund rate jump triggered', detail: 'd', source: '', kind: 'alert', doneLabel: '✓ Done Nov 8' },
+    { id: 'invoice:x', title: 'Invoice X overdue 9 days', detail: 'now', source: '', kind: 'overdue_invoice', doneLabel: '✓ Done Nov 5' },
   ])
   assert.equal(isDone(handled, 'alert:del', '2026-11-09'), true, 'a deleted to-do stays off the open list')
   const state = deriveState({ raw, orders: storeOrders, openInvoices, handled: [{ id: 'invoice:INV2-A', at: '2026-11-10' }], errors: {}, now: NOW })
   assert.deepEqual(state.doneCases.map(c => c.id), ['invoice:INV2-A'])
+})
+
+test('alert cards carry a bell, to-dos say where they came from, and a done to-do is a plain row', () => {
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  assert.match(board, /^ruleTop = Row\(\[ruleIcon, ruleHeading, ruleBadge\]/m)
+  assert.match(board, /^ruleIcon = Icon\("notifications"\)$/m)
+  assert.match(board, /^paypalIcon = Icon\("notifications"\)$/m)
+  assert.match(board, /^todoMain = Column\(\[todoTop, todoSource, todoDetail\]/m)
+  assert.match(board, /^doneCard = Row\(/m, 'no card frame: a done to-do steps back')
 })
 
 test('a done to-do shows a green check and a menu with Undo and Delete', () => {
