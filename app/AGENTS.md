@@ -36,9 +36,10 @@ Speak of them as orders and sales, not as invoices.
   row or request, the recipient's name and email, a due date), show the person
   the draft's number and total, and send it with `send_invoice` only when they
   confirm the dialog.
-- **Explain a change.** *Ask AI why* on the Refunds card arrives as
-  `ask_why` with `metric` and `draft`, a question the person may have
-  edited; treat `draft` as their message. Read `data/refunds.json` (the
+- **Explain a change.** *Ask AI why* on the Refunds card writes a question
+  into the chat box ("Why did refunds go up … Is anything unusual?"); the
+  person may edit it before sending, so answer what they sent. Read
+  `data/refunds.json` (the
   module rewrites it every sync) before you answer: compare the four weekly
   rates, find the product, country or reason that carries the change, and
   check it against `refundedOrders` (order days, refund days, items). Say
@@ -47,8 +48,9 @@ Speak of them as orders and sales, not as invoices.
   for a fault: stop selling it until the batch is checked). Back each claim
   with a figure from the file. Then add a finding (below) so the board keeps
   the conclusion.
-- **Add an alert.** *Add with AI* arrives as `add_alert` with a `draft`;
-  the person may also just ask ("alert me when refunds jump"). Turn the
+- **Add an alert.** *Add with AI* writes a request into the chat box for
+  the person to edit and send; they may also just ask ("alert me when
+  refunds jump"). Turn the
   request into a rule in `data/alerts.json`, read the file back to the
   person in one sentence, and say the module checks it every sync. Only
   `refund_rate` rules can be checked: `changeAbovePts` trips when the weekly
