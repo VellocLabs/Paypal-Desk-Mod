@@ -10,10 +10,11 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { describeCall, isWriteTool, register as registerGuard } from '../hooks/guard.js'
 import {
-  DONE_DAYS, FULL_SCAN_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
+  DONE_DAYS, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
+import { DEFAULT_RULES } from '../lib/alerts.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const readJson = path => JSON.parse(readFileSync(join(root, path), 'utf8'))
@@ -125,25 +126,26 @@ const raw = {
 const openInvoices = normalizeInvoices(overdueRows.filter(r => r.status === 'SENT'), NOW)
 
 test('deriveState turns the reads into the sales board and cases, most urgent first', () => {
-  const state = deriveState({ raw, orders: storeOrders, openInvoices, inboxFiles: [{ name: 'march.csv', since: NOW }], handled: [], errors: {}, now: NOW })
+  const state = deriveState({ raw, orders: storeOrders, alertRules: DEFAULT_RULES, openInvoices, inboxFiles: [{ name: 'march.csv', since: NOW }], handled: [], errors: {}, now: NOW })
   assert.equal(state.week.range, 'Nov 3 – Nov 9, 2026')
   assert.equal(state.week.kpis.net.value, '$140')
   assert.equal(state.week.kpis.orders.value, '2')
   assert.equal(state.week.kpis.refunds.value, '30.0%')
   assert.deepEqual(state.week.byCountry.map(c => c.label), ['United States', 'Germany'])
   assert.equal(state.trends.daily.length, 28)
-  assert.deepEqual(state.disputes.map(d => d.id), ['PP-D-1', 'PP-D-2'])
+  assert.deepEqual(state.paypalAlerts.map(d => [d.id, d.status]), [['PP-D-1', 'Respond in 2 days'], ['PP-D-2', 'Resolved']])
+  assert.deepEqual(state.alerts.map(a => [a.id, a.status, a.value]), [['refund-jump', 'Tripped', '30.0%']])
   assert.equal(state.summary.casesNote, '6 open, most urgent first')
-  assert.equal(state.summary.disputesNote, '1 open of 2')
-  for (const gone of ['invoices', 'plans', 'series']) assert.equal(state[gone], undefined, gone)
-  assert.deepEqual(state.cases.map(c => c.kind), ['dispute', 'overdue_invoice', 'duplicate_payment', 'overdue_invoice', 'refund_spike', 'invoice_request'])
+  assert.equal(state.summary.alertsNote, '2 of 3 need a look')
+  for (const gone of ['invoices', 'plans', 'series', 'disputes']) assert.equal(state[gone], undefined, gone)
+  assert.deepEqual(state.cases.map(c => c.kind), ['dispute', 'overdue_invoice', 'duplicate_payment', 'overdue_invoice', 'alert', 'invoice_request'])
   assert.equal(state.cases[0].id, 'dispute:PP-D-1')
   assert.equal(state.cases[1].id, 'invoice:INV2-A')
   assert.equal(state.cases[1].tone, 'danger')
   assert.equal(state.cases[3].id, 'invoice:INV2-B')
   assert.equal(state.cases[3].tone, 'warning')
-  assert.match(state.cases[4].detail, /^30\.0% of the last 7 days' sales were refunded, against 0\.0%/)
-  assert.equal(state.cases[4].title, 'Refunds up +30.0 pts this week')
+  assert.equal(state.cases[4].title, 'Refund rate jump tripped')
+  assert.match(state.cases[4].detail, /^Refund rate 30\.0% over Nov 3 – Nov 9, \+30\.0 pts on the week before\. The AI analysis is pending\.$/)
   assert.match(state.cases.at(-1).detail, /inbox\/march\.csv/)
   assert.equal(state.sync.ok, true)
   assert.ok(JSON.stringify(state).length < 20_000)
@@ -418,11 +420,11 @@ test('publishState falls back to state.set without publish, and sends nothing wh
   assert.deepEqual(sent, [])
 })
 
-test('app.start returns before the first sync ends and arms the timer; app.stop cancels it', async () => {
+test('app.start returns before the first sync ends and arms the timers; a changed alert file syncs at once; app.stop cancels them', async () => {
   const handlers = {}
   registerBackground((event, handler) => { handlers[event] = handler })
   let cancelled = 0
-  let period = 0
+  const timers = new Map()
   let release
   const gate = new Promise(resolve => { release = resolve })
   const world = fakeDollar({ answers: toolAnswers })
@@ -431,15 +433,30 @@ test('app.start returns before the first sync ends and arms the timer; app.stop 
     await gate
     return call(...args)
   }
-  world.$.clock.every = (ms, fn) => { period = ms; return { cancel() { cancelled += 1 } } }
+  world.$.clock.every = (ms, fn) => { timers.set(ms, fn); return { cancel() { cancelled += 1 } } }
+  const appFiles = {}
+  world.$.fs.exists = async path => path in appFiles
+  world.$.fs.read = async path => appFiles[path]
   await handlers['app.start'](world.$, { appId: 'paypal-desk-board', folder: '/apps/x', folders: { read: [], write: [] }, locale: 'en' })
   assert.equal(world.state.value.week, undefined, 'the sync is still reading')
-  assert.equal(period, 5 * 60_000)
+  assert.deepEqual([...timers.keys()], [5 * 60_000, RULES_WATCH_MS])
   release()
   await whenIdle()
   assert.equal(world.state.value.week.kpis.net.value, '$200')
+  assert.deepEqual(world.state.value.alerts.map(a => a.id), ['refund-jump'], 'with no alert file, the built-in rule')
+
+  const reads = () => world.calls.filter(c => c.tool === 'list_disputes').length
+  const before = reads()
+  await timers.get(RULES_WATCH_MS)()
+  assert.equal(reads(), before, 'nothing changed, no sync')
+  appFiles[ALERTS_FILE] = JSON.stringify({ alerts: [{ id: 'floor', name: 'Sales floor', metric: 'net_sales', below: 1000 }] })
+  await timers.get(RULES_WATCH_MS)()
+  await whenIdle()
+  assert.equal(reads(), before + 1)
+  assert.deepEqual(world.state.value.alerts.map(a => [a.id, a.status]), [['floor', 'Tripped']])
+
   await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
-  assert.equal(cancelled, 1)
+  assert.equal(cancelled, 2)
 })
 
 test('a sync adds the store payments from Transaction Search, every page, and keeps the last good ones when the read fails', async () => {
@@ -461,8 +478,8 @@ test('a sync adds the store payments from Transaction Search, every page, and ke
 
 test('the home view: the top cases, alerts with their analysis status, and findings', () => {
   const alertRules = [
-    { id: 'refund-watch', name: 'Refund rate watch', metric: 'refund_rate', changeAbovePts: 1.5 },
-    { id: 'ceiling', name: 'Refund ceiling', metric: 'refund_rate', rateAbovePct: 50 },
+    { id: 'refund-watch', name: 'Refund rate watch', metric: 'refund_rate', riseAbove: 1.5 },
+    { id: 'ceiling', name: 'Refund ceiling', metric: 'refund_rate', above: 50 },
   ]
   const findings = [
     { id: 'f-1', alertId: 'refund-watch', week: '2026-11-03..2026-11-09', at: '2026-11-10T09:00:00-05:00', title: '65W charger: bad batch', conclusion: 'Refunds since Nov 2 are chargers that stop charging.', action: 'Pause the charger' },
@@ -472,19 +489,23 @@ test('the home view: the top cases, alerts with their analysis status, and findi
   assert.equal(state.week.ask.refunds, "Analyze the change in the refund rate: 30.0% of sales for Nov 3 – Nov 9, 2026. What's behind it — which products, countries or refund reasons?", 'no week before: no comparison')
   assert.equal(state.needs.length, 3)
   assert.deepEqual(state.needs, state.cases.slice(0, 3))
-  assert.deepEqual(state.alerts.map(a => [a.id, a.status, a.tone]), [['refund-watch', 'Tripped · analyzed', 'warning'], ['ceiling', 'Quiet', 'success']])
+  assert.deepEqual(state.alerts.map(a => [a.id, a.status, a.tone, a.analysis]), [['refund-watch', 'Tripped', 'warning', 'analyzed'], ['ceiling', 'OK', 'success', '']])
+  assert.equal(state.alerts[0].note, 'AI: 65W charger: bad batch. Refunds since Nov 2 are chargers that stop charging.')
+  assert.deepEqual([state.alerts[0].rule, state.alerts[0].subject, state.alerts[0].value, state.alerts[0].better], ['Store: refund rate up more than 1.5 pts', 'Last 7 days', '30.0%', 'down'])
+  assert.equal(state.alerts[0].summary, 'Store: refund rate up more than 1.5 pts · Added with AI')
+  assert.equal(state.alerts[1].note, '')
   assert.deepEqual(state.findings.map(f => [f.id, f.source]), [['f-1', 'Automatic analysis'], ['f-0', 'Asked in chat']])
   assert.equal(state.findings[0].action, 'Suggested: Pause the charger')
-  assert.equal(state.summary.alertsNote, '1 tripped of 2')
+  assert.equal(state.summary.alertsNote, '2 of 4 need a look', 'one tripped rule and one open dispute')
 
   const pending = deriveState({ raw, orders: storeOrders, alertRules, findings: [], openInvoices, handled: [], errors: {}, now: NOW })
-  assert.equal(pending.alerts[0].status, 'Tripped · analysis pending')
+  assert.deepEqual([pending.alerts[0].analysis, pending.alerts[0].note], ['pending', 'Waiting for the AI to analyze it'])
 })
 
 test('a sync reads the alert and finding files and writes the refund breakdown for the agent', async () => {
   const world = fakeDollar({ answers: toolAnswers })
   const files = {
-    [ALERTS_FILE]: JSON.stringify({ alerts: [{ id: 'refund-watch', name: 'Refund rate watch', metric: 'refund_rate', changeAbovePts: 1.5 }] }),
+    [ALERTS_FILE]: JSON.stringify({ alerts: [{ id: 'refund-watch', name: 'Refund rate watch', metric: 'refund_rate', riseAbove: 1.5 }] }),
     [FINDINGS_FILE]: 'not json',
   }
   world.$.fs.exists = async p => p in files
@@ -519,7 +540,19 @@ test('delete_alert and dismiss_finding change the file and the board at once; ot
   assert.deepEqual(await handleAction(world.$, { action: 'delete_alert', context: {} }), { handled: false })
 })
 
-const trippedRow = (id, week = '2026-11-03..2026-11-09') => alertWithStatus({ id, name: `Alert ${id}`, rule: 'Weekly refund rate changes by more than 1.5 pts', reading: '6.3% of sales, +3.1 pts on the week before', week, tripped: true, understood: true }, [], null)
+test('deleting the built-in rule while there is no alert file writes a file without it', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  const files = {}
+  world.$.fs.exists = async p => p in files
+  world.$.fs.read = async p => files[p]
+  world.$.fs.write = async (p, text) => { files[p] = text }
+  world.state.value = { alerts: [{ id: 'refund-jump' }] }
+  await handleAction(world.$, { action: 'delete_alert', context: { id: 'refund-jump' } })
+  assert.deepEqual(JSON.parse(files[ALERTS_FILE]), { alerts: [] })
+  assert.deepEqual(world.state.value.alerts, [])
+})
+
+const trippedRow = (id, week = '2026-11-03..2026-11-09') => alertWithStatus({ id, name: `Alert ${id}`, rule: 'Store: refund rate up more than 1.5 pts', reading: 'refund rate 6.3% over Nov 3 – Nov 9, +3.1 pts on the week before', week, tripped: true, understood: true, ask: 'q' }, [], null)
 
 test('a tripped alert with no finding starts one agent run in the app, once per alert week, without waiting for it', async () => {
   const world = fakeDollar({ answers: toolAnswers })
@@ -537,7 +570,7 @@ test('a tripped alert with no finding starts one agent run in the app, once per 
   assert.match(asked[0].prompt, /"alertId": "a" and "week": "2026-11-03\.\.2026-11-09"/)
   assert.match(asked[0].prompt, /Change nothing on PayPal/)
   assert.deepEqual(world.store[ANALYSES_KEY], { 'a@2026-11-03..2026-11-09': NOW })
-  assert.equal(alertWithStatus(trippedRow('a'), [], { id: 'a', week: '2026-11-03..2026-11-09' }).status, 'Tripped · analyzing…')
+  assert.deepEqual(['analysis', 'note'].map(k => alertWithStatus(trippedRow('a'), [], { id: 'a', week: '2026-11-03..2026-11-09' })[k]), ['analyzing', 'The AI is analyzing it…'])
 
   assert.equal(await startAnalysis(world.$, [trippedRow('b')], NOW, () => {}), null, 'one run at a time')
   finish({ ok: true, text: 'Charger batch' })
@@ -571,29 +604,28 @@ test('after a run the board shows the new finding and the alert as analyzed', as
   const pending = { id: 'alert:a', kind: 'alert', title: 'Alert a tripped', detail: 'The AI analysis is pending.', tone: 'warning', label: 'Alert', since: NOW, ref: 'a', ask: 'q' }
   world.state.value = { alerts: [trippedRow('a')], findings: [], cases: [invoice, pending], sync: { at: NOW }, summary: { disputesNote: 'x' } }
   await refreshFindings(world.$)
-  assert.equal(world.state.value.alerts[0].status, 'Tripped · analyzed')
+  assert.deepEqual([world.state.value.alerts[0].status, world.state.value.alerts[0].analysis], ['Tripped', 'analyzed'])
   assert.deepEqual(world.state.value.findings.map(f => [f.id, f.source]), [['f-1', 'Automatic analysis']])
   assert.deepEqual(world.state.value.cases.map(c => c.id), ['invoice:INV2-A', 'alert:a'])
-  assert.equal(world.state.value.cases[1].detail, '6.3% of sales, +3.1 pts on the week before. AI: Charger batch. c', "the alert's to-do carries the conclusion")
+  assert.equal(world.state.value.cases[1].detail, 'Refund rate 6.3% over Nov 3 – Nov 9, +3.1 pts on the week before. AI: Charger batch. c', "the alert's to-do carries the conclusion")
   assert.deepEqual(world.state.value.summary, {
-    disputesNote: 'x', casesNote: '2 open, most urgent first', todoCount: 2, openTab: 2, findingsNote: 'Newest first', alertsNote: '1 tripped of 1',
+    disputesNote: 'x', casesNote: '2 open, most urgent first', todoCount: 2, openTab: 2, findingsNote: 'Newest first', alertsNote: '1 of 1 need a look',
   })
 })
 
-test('a tripped alert is a to-do with the analysis in it, and replaces the built-in refund to-do', () => {
-  const alertRules = [{ id: 'refund-watch', name: 'Refund rate watch', metric: 'refund_rate', changeAbovePts: 1.5 }]
+test('a tripped alert is a to-do with the analysis in it; with no rule there is no refund to-do', () => {
+  const alertRules = [{ id: 'refund-watch', name: 'Refund rate watch', metric: 'refund_rate', riseAbove: 1.5 }]
   const findings = [{ id: 'f-1', alertId: 'refund-watch', week: '2026-11-03..2026-11-09', at: '2026-11-10T09:00:00-05:00', title: '65W charger: bad batch', conclusion: 'Chargers stop charging.' }]
   const plain = deriveState({ raw, orders: storeOrders, openInvoices, handled: [], errors: {}, now: NOW })
-  assert.ok(plain.cases.some(c => c.kind === 'refund_spike'))
+  assert.ok(!plain.cases.some(c => c.kind === 'alert'))
   const state = deriveState({ raw, orders: storeOrders, alertRules, findings, openInvoices, handled: [], errors: {}, now: NOW })
-  assert.ok(!state.cases.some(c => c.kind === 'refund_spike'))
   const todo = state.cases.find(c => c.kind === 'alert')
   assert.equal(todo.id, 'alert:refund-watch')
   assert.equal(todo.title, 'Refund rate watch tripped')
-  assert.match(todo.detail, /^30\.0% of sales, \+30\.0 pts on the week before\. AI: 65W charger: bad batch\. Chargers stop charging\.$/)
-  assert.match(todo.ask, /^The alert "Refund rate watch" tripped \(Weekly refund rate changes by more than 1\.5 pts\): 30\.0% of sales/)
+  assert.match(todo.detail, /^Refund rate 30\.0% over Nov 3 – Nov 9, \+30\.0 pts on the week before\. AI: 65W charger: bad batch\. Chargers stop charging\.$/)
+  assert.match(todo.ask, /^The alert "Refund rate watch" \(Store: refund rate up more than 1\.5 pts\) reads refund rate 30\.0%/)
   assert.match(state.cases[0].ask, /^Work this case \(dispute:PP-D-1\): Dispute PP-D-1/)
-  assert.equal(state.cases.length, plain.cases.length)
+  assert.equal(state.cases.length, plain.cases.length + 1)
   assert.deepEqual([state.summary.todoCount, state.summary.openTab], [state.cases.length, 2])
   const none = deriveState({ raw: {}, now: NOW })
   assert.deepEqual([none.summary.todoCount, none.summary.openTab, none.summary.casesNote], [0, 0, 'Nothing needs you right now'])

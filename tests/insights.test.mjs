@@ -1,13 +1,13 @@
 /**
  * The demo's bad-batch story in the order book, and what the desk says
  * about refunds: per-product stats, the breakdown the
- * agent reads, and the alert rules checked against the week.
+ * agent reads.
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { storeOrder as order } from './fixtures.mjs'
 import { BAD_BATCH, makeOrder, orderNumber } from '../lib/orders.js'
-import { checkAlerts, rateChange, refundBreakdown, refundStats } from '../lib/insights.js'
+import { rateChange, refundBreakdown, refundStats } from '../lib/insights.js'
 
 test('orders already paid keep their content: the story only adds refunds', () => {
   // As the sandbox took them on Nov 8.
@@ -77,18 +77,4 @@ test('the breakdown for the agent has four weekly rates, products with the week 
   assert.equal(b.refundedOrders.length, 6)
   assert.deepEqual(Object.keys(b.refundedOrders[0]), ['order', 'ordered', 'refunded', 'country', 'items', 'product', 'amount', 'reason'])
   assert.ok(JSON.stringify(b).length < 64_000)
-})
-
-test('alert rules trip on a change or a ceiling; an unknown metric is listed, not checked', () => {
-  const rules = [
-    { id: 'a', name: 'Refund watch', metric: 'refund_rate', changeAbovePts: 1.5 },
-    { id: 'b', name: 'Ceiling', metric: 'refund_rate', rateAbovePct: 20 },
-    { id: 'c', name: 'Sales', metric: 'net_sales', changeAbovePts: 5 },
-    { name: 'no id' },
-  ]
-  const checked = checkAlerts(rules, storyOrders(), '2026-11-10')
-  assert.deepEqual(checked.map(a => [a.id, a.status]), [['a', 'tripped'], ['b', 'ok'], ['c', 'unknown']])
-  assert.equal(checked[0].rule, 'Weekly refund rate changes by more than 1.5 pts')
-  assert.equal(checked[0].week, '2026-11-03..2026-11-09')
-  assert.match(checked[0].reading, /^13\.0% of sales, \+6\.1 pts on the week before$/)
 })

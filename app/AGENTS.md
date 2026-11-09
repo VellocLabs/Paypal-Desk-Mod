@@ -20,11 +20,11 @@ Speak of them as orders and sales, not as invoices.
 
 ## What you do
 
-- **Work a to-do.** The *Actions* tab lists what needs the person: open
-  disputes, overdue invoices, inbox requests, duplicate payments, refund
-  rises and tripped alerts (the `cases` field). *Ask AI* on one writes a
+- **Work a to-do.** The *Actions* tab opens on the action list, the open
+  to-dos (the `cases` field): open disputes, overdue invoices, inbox
+  requests, duplicate payments and tripped alerts. *Ask AI* on one writes a
   question into the chat box, such as "Work this case (dispute:PP-D-1): …"
-  or, for an alert, "The alert … tripped …"; the person may edit it before
+  or, for an alert, "The alert … reads …"; the person may edit it before
   sending. Find the row by its id in
   `data/state.json`, then gather the facts with the PayPal tools (`get_dispute`,
   `get_invoice`, `list_transactions`) before you
@@ -33,6 +33,12 @@ Speak of them as orders and sales, not as invoices.
   Every call that changes the account opens a confirmation; the person decides
   there, so never ask "shall I?" in chat first and never bundle several writes
   into one step.
+- **Explain a dispute.** A dispute is a buyer's complaint filed with PayPal
+  about a payment: the item never arrived, it is not as described, or the
+  buyer did not authorize it. PayPal holds the amount until it is settled,
+  and the merchant must answer by the response date or lose it. It is not
+  a return request; a return may be one way to settle it. A chargeback is
+  the same complaint made through the buyer's card issuer.
 - **Mark a to-do done.** *Mark done* on the board hides a to-do for 7 days;
   if it is still true after them, it comes back. When the person asks you
   to close one, add `{"id": "<its id>", "at": "YYYY-MM-DD"}` (today) to
@@ -57,25 +63,31 @@ Speak of them as orders and sales, not as invoices.
   for a fault: stop selling it until the batch is checked). Back each claim
   with a figure from the file. Then add a finding (below) so the board keeps
   the conclusion.
-- **Add an alert.** *Add with AI*, in the Actions tab's Alerts card, writes a request into the chat box for
-  the person to edit and send; they may also just ask ("alert me when
-  refunds jump"). Turn the
-  request into a rule in `data/alerts.json`, read the file back to the
-  person in one sentence, and say the module checks it every sync. Only
-  `refund_rate` rules can be checked: `changeAbovePts` trips when the weekly
-  rate moves by more than that many points either way, `rateAbovePct` when
-  it goes above that percentage. Ask for a figure only if the request has
-  none and no sensible default (1.5 pts, 5%) fits. Asked for another metric,
-  say this desk checks refund rates only for now. To remove an alert, delete
-  its entry; the board's delete button does the same.
+- **Add an alert.** The Alerts section, below the action list, shows every
+  alert as a card: PayPal's disputes, and the rules the person set. *Add
+  alert with AI* writes a request into the chat box for the person to edit
+  and send; they may also just ask ("tell me when a product's refunds go
+  above 10%", "warn me if weekly sales drop under $20k"). Turn the request
+  into rules in `data/alerts.json` (format below), one rule per thing
+  watched, and say back in one sentence what each rule watches. The module
+  sees the file within seconds and the card appears with its current
+  figure; tell the person whether it is tripped right now. Ask for a figure
+  only if the request has none and no sensible default fits (refund rate up
+  1.5 pts, a product's refund rate above 10%, sales down 20%). Asked for
+  something no rule below can express, say what the desk can watch and
+  offer the nearest rule. To change an alert, edit its entry; to remove
+  one, delete it (the card's delete button does the same). With no
+  `data/alerts.json` the desk watches the built-in "Refund rate jump" rule;
+  writing the file replaces it, so keep it in the file unless asked not to.
 - **Analyze a tripped alert.** When an alert trips, the module starts an
   agent run in this folder by itself, with a prompt naming the alert and its
-  week; the board shows *Tripped · analyzing…* meanwhile. In that run, or in
-  chat when an alert still reads *Tripped · analysis pending*, analyze it as
-  for *Explain a change* and write a finding with that alert's `id` as
-  `alertId` and its `week`; the board then shows *Tripped · analyzed*, and
-  the alert's to-do carries the finding's title and conclusion. While a
-  refund alert is set, it replaces the built-in refund to-do. A run
+  week; the card says the AI is analyzing it meanwhile. In that run, or in
+  chat when a tripped alert's `analysis` is still `pending`, analyze it as
+  for *Explain a change* (for a sales, orders or units alert, use
+  `trends` and `week` in `data/state.json`, and `data/refunds.json` for
+  the orders) and write a finding with that alert's `id` as `alertId` and
+  its `week`; the card then carries the conclusion, and so does the
+  alert's to-do. A run
   started by the module has no one to confirm anything: read, write the
   finding, and change nothing on PayPal.
 - **Answer questions over the data.** Figures in chat may come with a chart in
@@ -103,12 +115,27 @@ Speak of them as orders and sales, not as invoices.
 
 ```json
 { "alerts": [
-  { "id": "refund-watch", "name": "Refund rate watch", "metric": "refund_rate", "changeAbovePts": 1.5, "rateAbovePct": 5 }
+  { "id": "refund-jump", "name": "Refund rate jump", "metric": "refund_rate", "riseAbove": 1.5 },
+  { "id": "product-refunds", "name": "Product refund rate", "metric": "refund_rate", "scope": "any_product", "above": 10 },
+  { "id": "sales-floor", "name": "Weekly sales floor", "metric": "net_sales", "below": 20000 },
+  { "id": "canada-orders", "name": "Canada orders", "metric": "orders", "scope": "country", "country": "CA", "dropAbove": 25 }
 ] }
 ```
 
-`id` is short, lowercase and unique; `name` is what the board shows; give
-one bound or both.
+Every rule reads the last 7 days (ending yesterday) against the 7 before.
+
+| Field | Holds |
+| --- | --- |
+| `id` | Short, lowercase, unique |
+| `name` | The card's title |
+| `metric` | `refund_rate` (percent of sales refunded), `net_sales` (dollars, refunds taken off), `orders`, `units` (units sold) or `aov` (average order value, dollars) |
+| `scope` | `store` (default), `product` with `sku` (a catalog SKU, see `lib/catalog.js`), `any_product` (trips when any product does; the card shows that product), or `country` with `country` (ISO code, e.g. `CA`). `aov` takes `store` or `country` |
+| `above`, `below` | Bounds on the week's figure, in the metric's unit |
+| `riseAbove`, `dropAbove` | Bounds on its change from the week before: points for `refund_rate`, percent otherwise |
+| `minOrders` | For `any_product` refund rates: products with fewer orders in the week are skipped; default 10 |
+
+Give at least one bound; the rule trips when any of them does. A rule the
+desk cannot read shows as *Can't check*: fix it.
 
 `data/findings.json`, newest anywhere (the board sorts by `at`):
 
@@ -145,12 +172,12 @@ missing.
 | `week.refundsNote` | The Refunds card subtitle |
 | `week.ask.net`, `.orders`, `.aov`, `.refunds`, `.all` | What a card's *Ask AI to analyze*, and the week's *Ask AI to analyze all changes*, draft in the composer |
 | `needs` | The first three `cases` |
-| `alerts` | `{id, name, rule, reading, week, status, tone}`; `status` is `Tripped · analyzed`, `Tripped · analyzing…`, `Tripped · analysis pending`, `Quiet` or `Not understood` |
+| `alerts` | The rule cards: `{id, name, rule, summary, subject, value, delta, trend, better, reading, week, source, status, tone, analysis, note, ask}`; `status` is `Tripped`, `OK` or `Can't check`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
+| `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, source, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
-| `summary.casesNote`, `summary.disputesNote`, `summary.alertsNote`, `summary.findingsNote` | Subtitles |
+| `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | Subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it), and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
-| `cases` | The open to-dos, most urgent first: `{id, kind, title, detail, tone, label, since, ref, ask}`; `kind` is `dispute`, `overdue_invoice`, `refund_spike`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
-| `disputes` | `{id, reason, amount, status, respondBy}` |
+| `cases` | The open to-dos, most urgent first: `{id, kind, title, detail, tone, label, since, ref, ask}`; `kind` is `dispute`, `overdue_invoice`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |
 
 Both windows end yesterday (this machine's local day): today's orders appear in `week.latest`

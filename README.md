@@ -45,12 +45,16 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   page once an hour (`lib/sales.js` does the figures). A direct payment
   whose invoice id is such a number is an order too, on the day it was
   made, with its refunds as PayPal's Transaction Search lists them.
-- **Actions**: open disputes with their response deadline, overdue invoices,
-  a refund rise, two payments that look like one, a new request file in
-  the inbox folder, and every alert that tripped, with the AI's conclusion.
-  *Ask AI* drafts a question about one in the chat box; *Mark done* hides
-  it for 7 days, and it comes back if it is still true. Below the list:
-  the alert rules (add one with AI, delete one) and all disputes.
+- **Actions**: first the action list: open disputes with their response
+  deadline, overdue invoices, two payments that look like one, a new
+  request file in the inbox folder, and every alert that tripped, with the
+  AI's conclusion. *Ask AI* drafts a question about one in the chat box;
+  *Mark done* hides it for 7 days, and it comes back if it is still true.
+  Below it, the alerts, one card each: PayPal's disputes, and the rules you
+  set by asking the AI (a product's refund rate above 10%, weekly sales
+  under a floor, a country's orders dropping). Each card shows the figure
+  it watches against the week before; a tripped rule is analyzed by the AI
+  on its own (`lib/alerts.js` checks the rules).
 - **Confirmation** (`hooks/guard.js`): a PayPal tool that creates, sends,
   refunds, cancels or accepts anything opens a confirmation dialog, whatever
   the session's permission mode. Reads pass.
