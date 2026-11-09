@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { storeOrder as order, storeRow, transactionRow } from './fixtures.mjs'
 import { makeOrder } from '../lib/orders.js'
-import { change, compactDollars, latestOrders, lineCents, paymentOrders, readStoreRow, salesBoard, windowTotals } from '../lib/sales.js'
+import { change, compactDollars, latestOrders, lineCents, paymentOrders, readStoreRow, salesBoard, weekAsks, windowTotals } from '../lib/sales.js'
 
 test('a paid invoice numbered PD-YYYYMMDD-NNN is a store order: PayPal gives amount and status, the order book the rest', () => {
   assert.equal(readStoreRow({ invoice_id: 'INV2-X', invoice_number: '0001', status: 'PAID', amount: '10.00' }), null)
@@ -145,4 +145,27 @@ test('an empty store reads as empty, not as an error', () => {
   assert.deepEqual(board.month.products, [])
   assert.equal(board.salesNote, 'No store orders in the last 30 days.')
   assert.deepEqual(latestOrders([], '2026-11-10'), [])
+})
+
+test('the ask texts name each figure, both windows and the change as shown, and judge none of them', () => {
+  const kpis = {
+    net: { value: '$27.6K', trendValue: '+4.2%' },
+    orders: { value: '72', trendValue: '-3.0%' },
+    aov: { value: '$48.20', trendValue: '' },
+    refunds: { value: '6.3%', trendValue: '+3.1 pts' },
+  }
+  const ask = weekAsks(kpis, 'Nov 1 – Nov 7, 2026', 'Oct 25 – Oct 31')
+  assert.equal(ask.net, "Analyze the change in net sales: $27.6K for Nov 1 – Nov 7, 2026, +4.2% against Oct 25 – Oct 31. What's behind it — which products, countries or days?")
+  assert.equal(ask.orders, "Analyze the change in orders: 72 for Nov 1 – Nov 7, 2026, -3.0% against Oct 25 – Oct 31. What's behind it — which products, countries or days?")
+  assert.equal(ask.aov, "Analyze the change in average order value: $48.20 for Nov 1 – Nov 7, 2026. What's behind it — the product mix or basket size?", 'no delta, no comparison')
+  assert.equal(ask.refunds, "Analyze the change in the refund rate: 6.3% of sales for Nov 1 – Nov 7, 2026, +3.1 pts against Oct 25 – Oct 31. What's behind it — which products, countries or refund reasons?")
+  assert.equal(ask.all, [
+    "Analyze this week's changes, Nov 1 – Nov 7, 2026 against Oct 25 – Oct 31:",
+    '- Net sales: $27.6K (+4.2%)',
+    '- Orders: 72 (-3.0%)',
+    '- Avg order value: $48.20',
+    '- Refund rate: 6.3% (+3.1 pts)',
+    'What is behind each change, and are any of them connected?',
+  ].join('\n'))
+  for (const text of Object.values(ask)) assert.doesNotMatch(text, /\b(good|bad|better|worse|drop|jump|spike|unusual)\b/i)
 })

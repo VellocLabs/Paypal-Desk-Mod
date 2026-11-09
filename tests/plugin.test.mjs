@@ -468,7 +468,7 @@ test('the home view: the top cases, alerts with their analysis status, and findi
     { id: 'f-0', at: '2026-11-09T09:00:00-05:00', title: 'Older', conclusion: 'x' },
   ]
   const state = deriveState({ raw, orders: storeOrders, alertRules, findings, openInvoices, handled: [], errors: {}, now: NOW })
-  assert.equal(state.week.askRefunds, 'Why did refunds go up 30.0 pts in the last 7 days (Nov 3 – Nov 9, 2026)? Is anything unusual?')
+  assert.equal(state.week.ask.refunds, "Analyze the change in the refund rate: 30.0% of sales for Nov 3 – Nov 9, 2026. What's behind it — which products, countries or refund reasons?", 'no week before: no comparison')
   assert.equal(state.needs.length, 3)
   assert.deepEqual(state.needs, state.cases.slice(0, 3))
   assert.deepEqual(state.alerts.map(a => [a.id, a.status, a.tone]), [['refund-watch', 'Tripped · analyzed', 'warning'], ['ceiling', 'Quiet', 'success']])

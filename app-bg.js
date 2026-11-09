@@ -500,13 +500,8 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
   if (unavailable.length) noteParts.push(`not offered by this server: ${unavailable.join(', ')}`)
   if (unread) noteParts.push(`${unread} invoice(s) PayPal's server would not send`)
   const alerts = viewAlerts(checkAlerts(alertRules, orders, today), findings, running)
-  const up = refunds.change.pts >= 0
   return {
     ...board,
-    week: board.week && {
-      ...board.week,
-      askRefunds: `Why did refunds go ${up ? 'up' : 'down'} ${Math.abs(refunds.change.pts).toFixed(1)} pts in the last 7 days (${board.week.range.split(' · ')[0]})? Is anything unusual?`,
-    },
     needs: cases.slice(0, NEEDS_SHOWN),
     alerts,
     findings: viewFindings(findings),
