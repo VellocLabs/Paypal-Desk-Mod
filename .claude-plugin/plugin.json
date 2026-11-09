@@ -26,7 +26,7 @@
         "seed": "./app",
         "seedVersion": 10,
         "data": "data/state.json",
-        "localActions": ["delete_alert", "dismiss_finding", "mark_done"],
+        "localActions": ["dismiss_finding", "mark_done"],
         "background": {
           "module": "./app-bg.js",
           "agent": true,

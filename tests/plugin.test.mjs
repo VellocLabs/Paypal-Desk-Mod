@@ -32,7 +32,7 @@ test('the manifest declares the app, its background module and the inbox folder'
   assert.ok(existsSync(join(root, app.seed, app.data)))
   assert.ok(existsSync(join(root, app.background.module)))
   assert.ok(app.background.fs.read.every(folder => folder.startsWith('~/')))
-  assert.deepEqual(app.localActions, ['delete_alert', 'dismiss_finding', 'mark_done'])
+  assert.deepEqual(app.localActions, ['dismiss_finding', 'mark_done'])
 })
 
 test('the hooks file names a module inside hooks/, and the server is the one the template scopes to', () => {
@@ -518,7 +518,7 @@ test('a sync reads the alert and finding files and writes the refund breakdown f
   assert.equal(breakdown.weeks.length, 4)
 })
 
-test('delete_alert and dismiss_finding change the file and the board at once; other actions go to the model', async () => {
+test('dismiss_finding changes the file and the board at once; other actions, deleting an alert among them, go to the model', async () => {
   const world = fakeDollar({ answers: toolAnswers })
   const files = {
     [ALERTS_FILE]: JSON.stringify({ alerts: [{ id: 'a' }, { id: 'b' }] }),
@@ -529,27 +529,19 @@ test('delete_alert and dismiss_finding change the file and the board at once; ot
   world.$.fs.write = async (p, text) => { files[p] = text; world.written[p] = text }
   world.state.value = { alerts: [{ id: 'a' }, { id: 'b' }], findings: [{ id: 'f' }] }
 
-  assert.deepEqual(await handleAction(world.$, { action: 'delete_alert', context: { id: 'a' } }), { handled: true })
-  assert.deepEqual(JSON.parse(files[ALERTS_FILE]).alerts, [{ id: 'b' }])
-  assert.deepEqual(world.state.value.alerts, [{ id: 'b' }])
-  assert.deepEqual(world.published.at(-1).map(p => p.path), ['/alerts'])
-
   assert.deepEqual(await handleAction(world.$, { action: 'dismiss_finding', context: { id: 'f' } }), { handled: true })
   assert.deepEqual(world.state.value.findings, [])
+  assert.deepEqual(world.published.at(-1).map(p => p.path), ['/findings'])
   assert.deepEqual(await handleAction(world.$, { action: 'ask_why', context: { draft: 'Why?' } }), { handled: false })
-  assert.deepEqual(await handleAction(world.$, { action: 'delete_alert', context: {} }), { handled: false })
+  assert.deepEqual(await handleAction(world.$, { action: 'delete_alert', context: { id: 'a' } }), { handled: false })
+  assert.deepEqual(JSON.parse(files[ALERTS_FILE]).alerts, [{ id: 'a' }, { id: 'b' }], 'the board never removes an alert itself')
+  assert.deepEqual(await handleAction(world.$, { action: 'dismiss_finding', context: {} }), { handled: false })
 })
 
-test('deleting the built-in rule while there is no alert file writes a file without it', async () => {
-  const world = fakeDollar({ answers: toolAnswers })
-  const files = {}
-  world.$.fs.exists = async p => p in files
-  world.$.fs.read = async p => files[p]
-  world.$.fs.write = async (p, text) => { files[p] = text }
-  world.state.value = { alerts: [{ id: 'refund-jump' }] }
-  await handleAction(world.$, { action: 'delete_alert', context: { id: 'refund-jump' } })
-  assert.deepEqual(JSON.parse(files[ALERTS_FILE]), { alerts: [] })
-  assert.deepEqual(world.state.value.alerts, [])
+test("a rule card's Edit and Delete draft a request naming the alert for the session agent", () => {
+  const state = deriveState({ raw, orders: storeOrders, alertRules: DEFAULT_RULES, now: NOW })
+  assert.equal(state.alerts[0].editAsk, 'Change the alert "Refund rate jump" (id: refund-jump, now Store: refund rate up more than 1.5 pts): ')
+  assert.equal(state.alerts[0].deleteAsk, 'Delete the alert "Refund rate jump" (id: refund-jump).')
 })
 
 const trippedRow = (id, week = '2026-11-03..2026-11-09') => alertWithStatus({ id, name: `Alert ${id}`, rule: 'Store: refund rate up more than 1.5 pts', reading: 'refund rate 6.3% over Nov 3 – Nov 9, +3.1 pts on the week before', week, tripped: true, understood: true, ask: 'q' }, [], null)
@@ -658,4 +650,12 @@ test('mark_done records the day in the handled file and drops the to-do from the
   assert.deepEqual(world.state.value.needs.map(c => c.id), ['a'])
   assert.deepEqual(world.state.value.summary, { alertsNote: 'n', casesNote: '1 open, most urgent first', todoCount: 1, openTab: 2 })
   assert.deepEqual(await handleAction(world.$, { action: 'mark_done', context: {} }), { handled: false })
+})
+
+test('the board uses only icons the catalog offers', () => {
+  const allowed = new Set(['accountCircle', 'add', 'arrowBack', 'arrowForward', 'attachFile', 'calendarToday', 'call', 'camera', 'check', 'close', 'delete', 'download', 'edit', 'event', 'error', 'fastForward', 'favorite', 'favoriteOff', 'folder', 'help', 'home', 'info', 'locationOn', 'lock', 'lockOpen', 'mail', 'menu', 'moreVert', 'moreHoriz', 'notificationsOff', 'notifications', 'pause', 'payment', 'person', 'phone', 'photo', 'play', 'print', 'refresh', 'rewind', 'search', 'send', 'settings', 'share', 'shoppingCart', 'skipNext', 'skipPrevious', 'star', 'starHalf', 'starOff', 'stop', 'upload', 'visibility', 'visibilityOff', 'volumeDown', 'volumeMute', 'volumeOff', 'volumeUp', 'warning'])
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  const used = [...board.matchAll(/Icon\("([^"]+)"\)/g)].map(m => m[1])
+  assert.ok(used.length > 0)
+  assert.deepEqual(used.filter(name => !allowed.has(name)), [])
 })

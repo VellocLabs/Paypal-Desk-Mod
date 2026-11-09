@@ -112,22 +112,19 @@ export function register(on) {
 }
 
 /**
- * The board's local actions: `delete_alert` {id} removes an alert rule,
- * `dismiss_finding` {id} a finding, and `mark_done` {id} hides a to-do for
- * DONE_DAYS, in their files and on the board at once. Answers
- * {handled: false} for any other action, which then goes to the model.
+ * The board's local actions: `dismiss_finding` {id} removes a finding, and
+ * `mark_done` {id} hides a to-do for DONE_DAYS, in their files and on the
+ * board at once. Answers {handled: false} for any other action, which then
+ * goes to the model. Alerts are changed and removed by the session agent,
+ * asked through the composer.
  */
 export async function handleAction($, e) {
   const id = e && e.context && typeof e.context.id === 'string' ? e.context.id : ''
   if (e && e.action === 'mark_done' && id) return markDone($, id)
-  const target = e && e.action === 'delete_alert' ? { file: ALERTS_FILE, key: 'alerts' }
-    : e && e.action === 'dismiss_finding' ? { file: FINDINGS_FILE, key: 'findings' }
-      : null
+  const target = e && e.action === 'dismiss_finding' ? { file: FINDINGS_FILE, key: 'findings' } : null
   if (!target || !id) return { handled: false }
   const doc = await readJsonFile($, target.file)
-  // With no alert file the board shows the built-in rules, so deleting one writes the rest.
-  const list = Array.isArray(doc && doc[target.key]) ? doc[target.key]
-    : target.file === ALERTS_FILE && !doc ? DEFAULT_RULES : []
+  const list = Array.isArray(doc && doc[target.key]) ? doc[target.key] : []
   const kept = list.filter(item => !(item && item.id === id))
   if (kept.length !== list.length) await $.fs.write(target.file, `${JSON.stringify({ ...doc, [target.key]: kept }, null, 2)}\n`)
   const state = (await $.app.state.get()) || {}
@@ -657,6 +654,8 @@ export function viewAlerts(checked, findings, running = null) {
     ask: a.understood
       ? `The alert "${a.name}" (${a.rule}) reads ${a.reading}. What's behind it, and what should I do?`
       : `Rewrite the alert "${a.name}" in data/alerts.json so this desk can check it.`,
+    editAsk: `Change the alert "${a.name}" (id: ${a.id}, now ${a.rule}): `,
+    deleteAsk: `Delete the alert "${a.name}" (id: ${a.id}).`,
   }, findings, running))
 }
 

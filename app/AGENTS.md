@@ -63,38 +63,108 @@ Speak of them as orders and sales, not as invoices.
   for a fault: stop selling it until the batch is checked). Back each claim
   with a figure from the file. Then add a finding (below) so the board keeps
   the conclusion.
-- **Add an alert.** The Alerts section, below the action list, shows every
-  alert as a card: PayPal's disputes, and the rules the person set. *Add
-  alert with AI* writes a request into the chat box for the person to edit
-  and send; they may also just ask ("tell me when a product's refunds go
-  above 10%", "warn me if weekly sales drop under $20k"). Turn the request
-  into rules in `data/alerts.json` (format below), one rule per thing
-  watched, and say back in one sentence what each rule watches. The module
-  sees the file within seconds and the card appears with its current
-  figure; tell the person whether it is tripped right now. Ask for a figure
-  only if the request has none and no sensible default fits (refund rate up
-  1.5 pts, a product's refund rate above 10%, sales down 20%). Asked for
-  something no rule below can express, say what the desk can watch and
-  offer the nearest rule. To change an alert, edit its entry; to remove
-  one, delete it (the card's delete button does the same). With no
-  `data/alerts.json` the desk watches the built-in "Refund rate jump" rule;
-  writing the file replaces it, so keep it in the file unless asked not to.
-- **Analyze a tripped alert.** When an alert trips, the module starts an
-  agent run in this folder by itself, with a prompt naming the alert and its
-  week; the card says the AI is analyzing it meanwhile. In that run, or in
-  chat when a tripped alert's `analysis` is still `pending`, analyze it as
-  for *Explain a change* (for a sales, orders or units alert, use
-  `trends` and `week` in `data/state.json`, and `data/refunds.json` for
-  the orders) and write a finding with that alert's `id` as `alertId` and
-  its `week`; the card then carries the conclusion, and so does the
-  alert's to-do. A run
-  started by the module has no one to confirm anything: read, write the
-  finding, and change nothing on PayPal.
+- **Alerts.** Add, change, delete and analyze alerts as the *Alerts*
+  section below says.
 - **Answer questions over the data.** Figures in chat may come with a chart in
   an `<a2ui>` block, but never on the app's own surface id.
 - **Reshape the dashboard when asked.** Load the `a2ui` skill, edit
   `app.a2ui`, call `BuildApp`. Keep every binding under `$/data/...` as the
   module publishes it; see the field list below.
+
+## Alerts
+
+Every alert works the same way. Follow this section rather than inventing a
+variant for one alert.
+
+**What an alert is.** A condition the desk watches by itself; when it is
+true the alert has *tripped*. Alerts come from two sources and look alike:
+
+- *From PayPal*: each dispute, open or resolved in the last 30 days. The
+  module reads them from PayPal. You cannot add, change or delete one; it
+  leaves the board 30 days after PayPal resolves it.
+- *Rules*: what the person asked to watch, kept in `data/alerts.json`
+  (format under *Files you write*). With no such file the desk watches the
+  built-in "Refund rate jump" rule.
+
+**How a card looks.** The *Actions* tab shows the action list first, then
+the *Alerts* heading with *Add alert with AI*, then the alerts as cards in
+a grid, as many columns as fit: PayPal's first, then the rules. Every card
+has the same parts, top to bottom:
+
+1. The title, then a status badge: *Tripped* (amber), *OK* (green) or
+   *Can't check* (grey) for a rule; for a dispute, what the merchant must
+   do and how soon (red when 3 days or less remain).
+2. One caption line: the rule in words (or the dispute id and the day it
+   was opened), then who set it.
+3. The figure: what it reads (the store, a product, a country), the value,
+   and its change on the week before, green or red by whether that
+   direction is good.
+4. A note: the AI's conclusion, or that the analysis is pending or
+   running. It is empty while the alert is quiet.
+5. A bar that appears in the top-right corner on hover: *Edit* and
+   *Delete* on a rule, *Ask AI* on a dispute.
+
+The module fills every part from the rule and the data. Adding, changing
+or deleting an alert never needs `app.a2ui` edited: never add a component,
+colour or layout for one alert. If the person wants alert cards to look
+different, change the shared card templates (`ruleCard`, `paypalCard`), so
+every card keeps one style.
+
+**Add.** *Add alert with AI* writes a request into the chat box for the
+person to edit and send; they may also just ask ("tell me when a
+product's refunds go above 10%", "warn me if weekly sales drop under
+$20k"). Turn the request into rules in `data/alerts.json`, one rule per
+thing watched, and say back in one sentence what each rule watches. The
+card appears within seconds with its current figure; tell the person
+whether it is tripped right now. Ask for a figure only if the request has
+none and no sensible default fits (refund rate up 1.5 pts, a product's
+refund rate above 10%, sales down 20%). Asked for something no rule can
+express, say what the desk can watch and offer the nearest rule. Writing
+the file replaces the built-in rule, so copy it into the file unless the
+person asked to drop it.
+
+**How it trips.** The module checks every rule on each sync (every 5
+minutes), and within about 10 seconds of `data/alerts.json` or
+`data/findings.json` changing. A rule reads the last 7 days, ending
+yesterday, against the 7 before. When it trips, three things happen: the
+card turns *Tripped*, a to-do "<name> tripped" joins the action list, and
+the module starts an agent run in this folder to analyze it, once per
+alert and week, again after 6 hours if that run wrote no finding.
+
+**Analyze.** In that run, or in chat when a tripped alert's `analysis` is
+still `pending`, analyze it as for *Explain a change*. For a sales, orders
+or units alert, use `trends` and `week` in `data/state.json`, and
+`data/refunds.json` for the orders. Write a finding with the alert's `id`
+as `alertId` and its `week`; the card's note and the to-do then carry the
+conclusion. A run the module started has no one to confirm anything: read,
+write the finding, and change nothing on PayPal.
+
+**Edit.** *Edit* on a card writes `Change the alert "<name>" (id: <id>,
+now <rule>): ` into the chat box, and the person types the change. Change
+that entry in place and keep its `id`, so its findings and done mark stay
+with it. Use a new `id` only when it now watches something else entirely.
+Say the new rule back in one sentence.
+
+**Delete.** *Delete* writes `Delete the alert "<name>" (id: <id>).` into
+the chat box. The person sent it, so do it without asking again:
+
+- remove the entry from `data/alerts.json`; if the file is missing and it
+  is the built-in rule, write `{ "alerts": [] }`;
+- remove the findings whose `alertId` is that id from
+  `data/findings.json`, and the `alert:<id>` entries from
+  `data/handled.json`;
+- remove anything else that was made only for that alert: a file, or a
+  component or binding someone added to `app.a2ui` for it (then call
+  `BuildApp`).
+
+Then say in one sentence what you removed. The card and its to-do leave
+the board within seconds. A dispute cannot be deleted: say so, and offer
+to mark its to-do done.
+
+**Mark done.** *Mark done* acts on a to-do, not on the alert. On a tripped
+alert's to-do it hides the to-do for 7 days; the card still shows
+*Tripped* while the condition holds, and the to-do comes back after the 7
+days if it still does. To stop watching something, delete the alert.
 
 ## Rules
 
@@ -135,7 +205,8 @@ Every rule reads the last 7 days (ending yesterday) against the 7 before.
 | `minOrders` | For `any_product` refund rates: products with fewer orders in the week are skipped; default 10 |
 
 Give at least one bound; the rule trips when any of them does. A rule the
-desk cannot read shows as *Can't check*: fix it.
+desk cannot read shows as *Can't check*: fix it. `source` is not yours to
+write.
 
 `data/findings.json`, newest anywhere (the board sorts by `at`):
 
@@ -172,7 +243,7 @@ missing.
 | `week.refundsNote` | The Refunds card subtitle |
 | `week.ask.net`, `.orders`, `.aov`, `.refunds`, `.all` | What a card's *Ask AI to analyze*, and the week's *Ask AI to analyze all changes*, draft in the composer |
 | `needs` | The first three `cases` |
-| `alerts` | The rule cards: `{id, name, rule, summary, subject, value, delta, trend, better, reading, week, source, status, tone, analysis, note, ask}`; `status` is `Tripped`, `OK` or `Can't check`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
+| `alerts` | The rule cards: `{id, name, rule, summary, subject, value, delta, trend, better, reading, week, source, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `status` is `Tripped`, `OK` or `Can't check`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
 | `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, source, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | Subtitles |
