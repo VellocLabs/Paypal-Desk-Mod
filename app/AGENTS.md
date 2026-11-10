@@ -39,6 +39,9 @@ Speak of them as orders and sales, not as invoices.
   and the merchant must answer by the response date or lose it. It is not
   a return request; a return may be one way to settle it. A chargeback is
   the same complaint made through the buyer's card issuer.
+- **Review a dispute.** See *Disputes* below: the module starts a review
+  run for each open dispute that waits on the merchant; in chat, *Adopt*
+  and *Ask AI* on its review card draft the request.
 - **Mark a to-do done.** *Mark done* on the board moves a to-do from the
   open list to the done list below it, for 7 days: the same card, its emoji
   turned to ✅, "Done Nov 9" by its source, and a *⋯* menu in place of the
@@ -74,6 +77,50 @@ Speak of them as orders and sales, not as invoices.
 - **Reshape the dashboard when asked.** Load the `a2ui` skill, edit
   `app.a2ui`, call `BuildApp`. Keep every binding under `$/data/...` as the
   module publishes it; see the field list below.
+
+## Disputes
+
+The *Dispute review* section of the *Actions* tab has one card per open
+dispute that waits on the merchant. The card says what the buyer claims, the
+deadline, and your verdict: **Refund**, **Contest** or **Your call**, with
+why, what was checked, the next steps and a reply draft. Until you have
+written a review it shows the desk's own checks and the lean of its rules.
+
+**When.** The module starts an agent run in this folder for each such
+dispute with no review for its current version (the dispute's
+`update_time`), soonest deadline first, one run at a time, again after 6
+hours if that run wrote no review. A run the module started has no one to
+confirm anything: read, write the review, change nothing on PayPal.
+
+**Review.** In that run, or when asked in chat:
+
+1. Start from the dispute's entry in `data/disputes.json` (the module
+   rewrites it every sync): `family`, `stage`, `daysLeft`, the `order`
+   behind the payment, `secondCharge`, `alreadyRefunded`, `product` (its
+   refund rate over 28 days against `storeRate`, and `faulty`),
+   `buyerOrders`, `buyerDisputes`, `sellerProtection`, `buyerSays`,
+   `allowed`, `checks` and `lean`.
+2. Read the dispute with `get_dispute` when the server offers it: the
+   buyer's messages, the evidence PayPal asks for, the allowed responses.
+   Check the payments with `list_transactions` when the entry leaves a
+   doubt.
+3. Decide with the dispute rules of the `paypal-rules` skill. The `lean` is
+   the desk's rules applied mechanically: agree, or say why not. Never
+   recommend accepting a claim you have not read.
+4. Add the review to `data/reviews.json` (format under *Files you write*),
+   keeping the reviews there. The card changes within seconds.
+
+Every reason is a fact from the entry, the dispute or a tool answer, with
+its figure or id. The reply draft is what the merchant pastes in PayPal's
+Resolution Center: two to four plain sentences to the buyer, or to PayPal
+for a contest, naming the evidence attached.
+
+**Adopt.** The card's primary button drafts "Go with your review of
+dispute …" into the chat box. For a refund: make the refund call when a tool
+here can (it opens a confirmation); when none can, say so and give the exact
+steps in the Resolution Center. For a contest: list the evidence to upload
+(order, payment, tracking, the listing) and give the reply. Evidence upload,
+offers and messages are not tools here.
 
 ## Alerts
 
@@ -183,8 +230,8 @@ stop watching something, delete the alert.
   three days as urgent and say so.
 - The `paypal-rules` skill holds the operating rules for disputes, invoices,
   refunds and subscriptions. Load it before acting on a case of that kind.
-- Do not edit `data/state.json` or `data/refunds.json` by hand: the module
-  overwrites them.
+- Do not edit `data/state.json`, `data/refunds.json` or
+  `data/disputes.json` by hand: the module overwrites them.
 
 ## Files you write
 
@@ -262,6 +309,25 @@ card: *Can't check* gives the reason as its caption; fix the formula.
 ] }
 ```
 
+`data/reviews.json`, one review per dispute version (a newer one replaces
+it on the card):
+
+```json
+{ "reviews": [
+  { "disputeId": "PP-D-1", "at": "2026-11-09T14:02:00-05:00", "verdict": "refund",
+    "confidence": "high", "headline": "The buyer was charged twice for one order",
+    "reasons": ["TX-1 and TX-2: same buyer, $59.70 each, 3 minutes apart", "Order PD-20261108-014 was shipped once"],
+    "steps": ["Refund TX-2 in full ($59.70)", "Tell the buyer the second charge is refunded"],
+    "reply": "Sorry for the double charge. We refunded the second payment of $59.70 today; it reaches you in 3 to 5 days." }
+] }
+```
+
+`verdict` is `refund`, `contest` or `review` (the merchant's call: the
+facts cut both ways, or one is missing; say which). `confidence` is `high`,
+`medium` or `low`. Two to four `reasons` and `steps`, each one line. `at`
+must be after the dispute's `updated` time, or the card treats the review
+as stale.
+
 `alertId` and `week` only for an alert's analysis (`week` as the alert row
 gives it); `action` is optional, a short imperative. Keep earlier findings;
 the board shows the newest five, and the person dismisses them there.
@@ -291,6 +357,8 @@ missing.
 | `alerts` | Your rules as checked: `{id, name, rule, condition, headline, summary, subject, value, delta, trend, better, reading, week, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
 | `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
+| `disputeReviews` | The *Dispute review* cards: `{id, state, claim, subject, verdictLabel, verdictTone, confidence, deadline, deadlineTone, headline, buyerSays, why, checks, steps, reply, replyBlock, source, adoptLabel, adoptAsk, reviewAsk, ask}`; `state` is `pending`, `reviewing` or `reviewed`; `why`, `checks`, `steps` and `replyBlock` are Markdown |
+| `summary.reviewsNote` | The *Dispute review* heading's subtitle |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it), and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
 | `doneCases` | The done list, latest first: the open card's fields plus `doneNote` ("Alert rule: Refund rate jump · Done Nov 9") and `doneLabel` ("✓ Done Nov 9") |

@@ -12,6 +12,7 @@ import { describeCall, isWriteTool, register as registerGuard } from '../hooks/g
 import {
   DONE_DAYS, doneTodos, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
+  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, disputeDetails, startReview, refreshReviews,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
 import { DEFAULT_RULES } from '../lib/alerts.js'
@@ -50,7 +51,7 @@ test('the hooks file names a module inside hooks/, and the server is the one the
 })
 
 test('the background module imports only .js files, which the runtime compiler lowers', () => {
-  const files = ['app-bg.js', 'lib/catalog.js', 'lib/dates.js', 'lib/memo.js', 'lib/sales.js']
+  const files = ['app-bg.js', 'lib/catalog.js', 'lib/dates.js', 'lib/disputes.js', 'lib/insights.js', 'lib/memo.js', 'lib/sales.js']
   for (const file of files) {
     const text = readFileSync(join(root, file), 'utf8')
     for (const [, spec] of text.matchAll(/^import [^'"]*['"]([^'"]+)['"]/gm)) {
@@ -258,10 +259,10 @@ test('syncOnce publishes the board and copies new inbox files into the app folde
   assert.equal(world.state.value.week.kpis.net.value, '$200')
   assert.equal(world.state.value.week.latest.length, 2)
   assert.ok(world.state.value.cases.some(c => c.id === 'invoice:INV2-A'))
-  assert.deepEqual(Object.keys(world.written), ['inbox/orders.csv', 'data/refunds.json'])
+  assert.deepEqual(Object.keys(world.written), ['inbox/orders.csv', 'data/refunds.json', 'data/disputes.json'])
   assert.ok(world.state.value.cases.some(c => c.id === 'file:orders.csv'))
   await syncOnce(world.$, { inbox: '/home/me/Documents/paypal-desk/inbox', now: NOW })
-  assert.equal(Object.keys(world.written).length, 2, 'a seen file is not copied again')
+  assert.equal(Object.keys(world.written).length, 3, 'a seen file is not copied again')
 })
 
 test('the state is published one patch per changed top-level key, and old keys are removed', async () => {
@@ -718,7 +719,7 @@ test('events carry the emoji and the rule they came from; rule cards are setting
 
 test('a done to-do shows a green check and a menu with Undo and Delete', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
-  assert.match(board, /^todo = Column\(\[todoHead, todoList, doneList, alertsHead/m)
+  assert.match(board, /^todo = Column\(\[todoHead, todoList, doneList, reviewHead, reviewList, alertsHead/m)
   assert.match(board, /^doneCard = Card\(doneRow\)$/m, 'the same card as an open to-do')
   assert.match(board, /^doneIcon = Text\("✅"\)$/m)
   assert.match(board, /^doneTitle = Heading\(\$title, 3, \$doneNote\)$/m)
@@ -753,4 +754,81 @@ test('board: no tab repeats its own name as a title; each tab opens on its perio
     assert.match(line, /^Heading\(subtitle=\$\/data\/[\w/]+[,)]/, `${name} opens on a bound subtitle line, small and muted`)
   }
   assert.doesNotMatch(board, /Heading\("(Store sales|Trends|Actions|Overview)"/)
+})
+
+// ---- dispute review --------------------------------------------------------
+
+test('get_dispute is read once per dispute version; the list row stands in when the server has no such tool', async () => {
+  const world = fakeDollar({ answers: { get_dispute: args => ({ dispute_id: args.dispute_id, messages: [{ posted_by: 'BUYER', content: 'never came' }] }) } })
+  const listed = { items: [
+    { dispute_id: 'PP-D-1', status: 'WAITING_FOR_SELLER_RESPONSE', update_time: day(-1) },
+    { dispute_id: 'PP-D-2', status: 'UNDER_REVIEW', update_time: day(-1) },
+  ] }
+  const first = await disputeDetails(world.$, listed)
+  assert.deepEqual(first.map(d => d.dispute_id), ['PP-D-1'], 'only what waits on the merchant')
+  assert.equal(first[0].messages[0].content, 'never came')
+  await disputeDetails(world.$, listed)
+  assert.equal(world.calls.filter(c => c.tool === 'get_dispute').length, 1, 'an unchanged dispute is not read again')
+  assert.deepEqual(world.calls[0].args, { dispute_id: 'PP-D-1' })
+  listed.items[0].update_time = day(0)
+  await disputeDetails(world.$, listed)
+  assert.equal(world.calls.filter(c => c.tool === 'get_dispute').length, 2, 'a changed dispute is read again')
+
+  const bare = fakeDollar({ answers: { get_dispute: { __error: 'MCP error -32602: Tool get_dispute not found' } } })
+  const unavailable = []
+  const rows = await disputeDetails(bare.$, { items: [listed.items[0], { ...listed.items[0], dispute_id: 'PP-D-3' }] }, unavailable)
+  assert.deepEqual(rows.map(d => d.dispute_id), ['PP-D-1', 'PP-D-3'])
+  assert.deepEqual(unavailable, ['get_dispute'])
+  assert.equal(bare.calls.length, 1, 'a missing tool is not tried for every dispute')
+})
+
+test('a sync writes the dispute facts, shows a pending review card, and leads with the review run before an alert analysis', async () => {
+  const listed = { items: [{ ...raw.disputes.items[0], dispute_id: 'PP-D-7', update_time: day(-1) }] }
+  const world = fakeDollar({ answers: { ...toolAnswers, list_disputes: listed, get_dispute: args => ({ dispute_id: args.dispute_id }) } })
+  const asked = []
+  let finish
+  world.$.app.analyze = req => { asked.push(req); return new Promise(r => { finish = r }) }
+  await syncOnce(world.$, { inbox: null, now: NOW })
+  const facts = JSON.parse(world.written[DISPUTES_FILE]).disputes
+  assert.deepEqual(facts.map(f => [f.id, f.family, f.lean.verdict]), [['PP-D-7', 'not_received', 'review']])
+  assert.deepEqual(asked.map(a => a.title), ['Review dispute PP-D-7'])
+  assert.match(asked[0].prompt, /"disputeId": "PP-D-7"/)
+  assert.match(asked[0].prompt, /Change nothing on PayPal/)
+  const card = world.state.value.disputeReviews[0]
+  assert.deepEqual([card.id, card.claim, card.verdictLabel], ['PP-D-7', 'Item not received', 'Reviewing…'])
+  assert.match(world.state.value.summary.reviewsNote, /^1 waiting on you · 0 of 1 reviewed by the AI/)
+
+  // The agent writes its review; the run ends; the card and the to-do carry the verdict.
+  const review = { disputeId: 'PP-D-7', at: new Date(NOW + 60_000).toISOString(), verdict: 'refund', confidence: 'medium', headline: 'No tracking on file', reasons: ['r'], steps: ['s'], reply: 'Hi' }
+  world.$.fs.exists = async p => p === REVIEWS_FILE
+  world.$.fs.read = async p => (p === REVIEWS_FILE ? JSON.stringify({ reviews: [review] }) : '')
+  finish({ ok: true })
+  await new Promise(r => setTimeout(r, 0))
+  await new Promise(r => setTimeout(r, 0))
+  const after = world.state.value
+  assert.deepEqual([after.disputeReviews[0].verdictLabel, after.disputeReviews[0].headline], ['Refund', 'No tracking on file'])
+  assert.match(after.cases.find(c => c.id === 'dispute:PP-D-7').detail, /^AI: Refund\. No tracking on file\n\n\$45\.00 in dispute/)
+  assert.match(after.summary.reviewsNote, /all reviewed by the AI/)
+  assert.deepEqual(world.store[REVIEWS_KEY], { [`PP-D-7@${day(-1)}`]: NOW })
+})
+
+test('a reviewed dispute is not reviewed again; one run at a time across reviews and analyses', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  const facts = [{ id: 'PP-D-1', updated: day(-1), daysLeft: 2, claim: 'c', amount: '$1.00', respondBy: day(2) }]
+  world.$.app.analyze = () => new Promise(() => {})
+  assert.equal(await startReview(world.$, facts, [{ disputeId: 'PP-D-1', at: day(0), verdict: 'contest' }], NOW, () => {}), null)
+  assert.ok(await startReview(world.$, facts, [], NOW, () => {}))
+  assert.equal(await startReview(world.$, [{ ...facts[0], id: 'PP-D-9' }], [], NOW, () => {}), null, 'a review is running')
+  assert.equal(await startAnalysis(world.$, [trippedRow('a')], NOW, () => {}), null, 'no analysis while a review runs')
+})
+
+test('the Dispute review grid binds only fields a review card has, and its buttons draft into the chat box', async () => {
+  const { reviewCards } = await import('../lib/disputes.js')
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  assert.match(board, /^reviewList = Grid\(_template\(\$\/data\/disputeReviews, reviewCard\), minWidth=440\)$/m)
+  const [card] = reviewCards([{ id: 'X', updated: '', daysLeft: 3, respondBy: day(3), stage: 'CLAIM', claim: 'c', amount: '$1.00', order: null, checks: [], lean: { verdict: 'refund', because: 'b' }, buyerSays: '' }], [], '')
+  const lines = board.split('\n').filter(line => /^review[A-Z]\w* = /.test(line))
+  const fields = new Set(lines.flatMap(line => [...line.matchAll(/\$([a-zA-Z]\w*)/g)].map(m => m[1])))
+  for (const field of fields) assert.ok(field in card, `the card has no ${field}`)
+  for (const line of lines.filter(l => l.includes('Event('))) assert.match(line, /Event\("compose", \{text: \$\w+\}\)/, line)
 })

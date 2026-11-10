@@ -43,6 +43,35 @@ improvising.
   merchant has not seen.
 - Transactions in a dispute can still be refunded directly with
   `create_refund`; a full refund resolves most inquiries without a claim.
+- Check what this connection offers before you plan a call: the sandbox
+  connection may list disputes with no `get_dispute`, and offer no refund
+  or accept tool. Then the decision is still yours to give; the merchant
+  carries it out in the Resolution Center.
+
+### Refund or contest
+
+Decide by the claim, then weigh the costs. Each line names the fact that
+settles it.
+
+| Claim | Refund when | Contest when |
+| --- | --- | --- |
+| Charged twice | A second charge, same buyer and amount, within minutes | Only one charge exists: show it |
+| Refund not received | No refund was made | The refund was made: show its record |
+| Item not received | No tracking that shows delivery, or the amount is small | Tracking shows delivery to the buyer's address |
+| Not as described | The product is refunded far above the store's rate (a faulty batch), or the amount is small | The listing matches what was sent; offer a refund on return first |
+| Unauthorized | Neither seller protection nor buyer history | The payment has seller protection, or the buyer has ordered before |
+
+- **Small amounts.** At or under $25, contesting costs more than the refund
+  (time, and a chargeback fee if it escalates): refund, unless the buyer
+  was already refunded.
+- **Earlier is cheaper.** An inquiry settled by a refund never becomes a
+  claim or a chargeback; a chargeback adds the issuer's fee and is decided
+  by the bank.
+- **A pattern is not one case.** A buyer with other disputes, or a product
+  refunded far above the store, changes the answer: say so in the review.
+- **Say when it is the merchant's call.** When facts cut both ways or one
+  is missing (no tracking on file for a large order), give the verdict
+  `review` and name the fact that would settle it.
 
 ## Invoices
 

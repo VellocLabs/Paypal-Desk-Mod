@@ -24,7 +24,7 @@
       "launcher": "hidden",
       "app": {
         "seed": "./app",
-        "seedVersion": 12,
+        "seedVersion": 13,
         "data": "data/state.json",
         "localActions": ["dismiss_finding", "mark_done", "undo_done", "delete_todo"],
         "background": {

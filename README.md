@@ -63,6 +63,17 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   cannot say (no sales two weeks running, a week under its 4-week average)
   the AI writes a formula, which the desk reads itself (`lib/formula.js`);
   no alert runs code.
+- **Dispute review** (`lib/disputes.js`): for each open dispute that waits
+  on you, the desk checks what it can on its own: the deadline, the order
+  behind the payment, a second charge, a refund already made, the
+  product's refund rate against the store's, the buyer's history and seller
+  protection, and what its rules lean to. Then the AI reviews it in the
+  background, with `get_dispute` and the `paypal-rules` skill, and writes a
+  verdict on the dispute's card: *Refund*, *Contest* or *Your call*, why,
+  what was checked, the next steps and a reply draft for the Resolution
+  Center. The primary button drafts "go with your review" into the chat;
+  nothing changes on PayPal until you confirm. It never accepts a claim on
+  its own.
 - **Confirmation** (`hooks/guard.js`): a PayPal tool that creates, sends,
   refunds, cancels or accepts anything opens a confirmation dialog, whatever
   the session's permission mode. Reads pass.
@@ -167,6 +178,9 @@ few hours, so seed early.
 
 - Open the desk. *Overview* shows the week's sales; *Actions* lists the
   overdue invoices and the dispute.
+- Under *Dispute review*, the dispute's card shows the desk's checks at
+  once and the AI's verdict a minute or two later. Press its primary button
+  (*Refund $…* or *Prepare the answer*) and send the drafted request.
 - Press *Ask AI* on the dispute and send the drafted question. The agent reads it with
   `get_dispute`, explains it, recommends, and calls a tool. The confirmation
   dialog names the call; allow or refuse there.
@@ -181,7 +195,7 @@ few hours, so seed early.
 .claude-plugin/plugin.json      the manifest: the app, its background module, the inbox folder
 .mcp.json                       PayPal's sandbox MCP server (OAuth, no stored secret)
 app-bg.js                       the background module
-lib/                            the catalog, the order book, the order memo, dates, the sales board
+lib/                            the catalog, the order book, the order memo, dates, the sales board, dispute review
 app/                            the seed: app.a2ui, AGENTS.md, data/state.json
 hooks/guard.js                  the confirmation gate on PayPal writes
 skills/paypal-rules/SKILL.md    operating rules and the tool map

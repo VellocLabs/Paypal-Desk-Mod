@@ -16,6 +16,7 @@
 import { addDays, dateOf, shortDate } from './lib/dates.js'
 import { DEFAULT_RULES, checkRules, disputeAlerts } from './lib/alerts.js'
 import { refundBreakdown } from './lib/insights.js'
+import { disputeFacts, latestReview, reviewCards, reviewLine, waitsOnMerchant } from './lib/disputes.js'
 import { invoiceRowFields, paymentOrders, readStoreRow, salesBoard } from './lib/sales.js'
 
 export const POLL_MS = 5 * 60_000
@@ -47,6 +48,14 @@ export const FINDINGS_FILE = 'data/findings.json'
 /** The refund breakdown the agent reads to explain a change; rewritten when it changes. */
 export const REFUNDS_FILE = 'data/refunds.json'
 const FINDINGS_SHOWN = 5
+/** The AI's dispute reviews: it writes them, the board shows them on the dispute's card. */
+export const REVIEWS_FILE = 'data/reviews.json'
+/** What the desk checked for each open dispute, for the AI to start from; rewritten when it changes. */
+export const DISPUTES_FILE = 'data/disputes.json'
+/** Each open dispute's `get_dispute` answer, by id, with the update time it was read at. */
+export const DETAILS_KEY = 'dispute.details'
+/** Which dispute versions had a review started, and when: {"<id>@<update time>": ms}. */
+export const REVIEWS_KEY = 'reviews.tried'
 /** Which alert weeks had an analysis started, and when: {"<alert id>@<week>": ms}. */
 export const ANALYSES_KEY = 'analyses'
 /** How long an analysis that ended without a finding waits before it is started again. */
@@ -191,7 +200,7 @@ async function rulesText($) {
       return ''
     }
   }
-  return `${await read(ALERTS_FILE)}\u0000${await read(FINDINGS_FILE)}`
+  return `${await read(ALERTS_FILE)}\u0000${await read(FINDINGS_FILE)}\u0000${await read(REVIEWS_FILE)}`
 }
 
 /** Rewrites the refund breakdown file when its content changed. */
@@ -236,12 +245,149 @@ export async function syncOnce($, { inbox, now }) {
   const alertsDoc = await readJsonFile($, ALERTS_FILE)
   const alertRules = alertsDoc ? listOf(alertsDoc, 'alerts') : DEFAULT_RULES
   const findings = listOf(await readJsonFile($, FINDINGS_FILE), 'findings')
+  const details = await disputeDetails($, raw.disputes, unavailable)
+  const transactions = normalizeTransactions(raw.transactions)
+  const facts = details.map(d => disputeFacts(d, { orders, transactions, disputes: details, now }))
+  factsSeen = facts
+  await writeDisputes($, facts)
+  const reviews = listOf(await readJsonFile($, REVIEWS_FILE), 'reviews')
 
-  let next = deriveState({ previous, raw, orders, alertRules, findings, running: analyzing, openInvoices: scan.openInvoices, unread: scan.unread, inboxFiles, handled, errors, unavailable, now })
-  if (await startAnalysis($, next.alerts, now, () => refreshFindings($))) {
+  let next = deriveState({ previous, raw, orders, alertRules, findings, facts, reviews, reviewing: reviewing || '', running: analyzing, openInvoices: scan.openInvoices, unread: scan.unread, inboxFiles, handled, errors, unavailable, now })
+  if (await startReview($, facts, reviews, now, () => refreshReviews($))) {
+    next = { ...next, disputeReviews: reviewCards(facts, reviews, reviewing || '') }
+  } else if (await startAnalysis($, next.alerts, now, () => refreshFindings($))) {
     next = { ...next, alerts: next.alerts.map(a => alertWithStatus(a, findings, analyzing)) }
   }
   await publishState($, previous, next)
+}
+
+/** The facts of the last sync's open disputes, to rebuild the review cards when a review ends. */
+let factsSeen = []
+let disputesWritten = ''
+
+/** Rewrites the dispute facts file when its content changed. */
+async function writeDisputes($, facts) {
+  const text = `${JSON.stringify({ disputes: facts }, null, 1)}\n`
+  if (text === disputesWritten || (!disputesWritten && facts.length === 0)) return
+  try {
+    await $.fs.write(DISPUTES_FILE, text)
+    disputesWritten = text
+  } catch (err) {
+    await $.log.warn(`could not write ${DISPUTES_FILE}: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+/**
+ * The open disputes that wait on the merchant, each as `get_dispute` answers
+ * it, read again only when its update time moved; the list row stands in
+ * when the server offers no `get_dispute` or the read fails.
+ */
+export async function disputeDetails($, listed, unavailable = []) {
+  const rows = listItems(listed, ['items', 'disputes']).filter(d => (d.dispute_id || d.id) && waitsOnMerchant(d))
+  const stored = (await $.store.get(DETAILS_KEY)) || {}
+  const kept = {}
+  let missing = unavailable.includes('get_dispute')
+  const out = []
+  for (const row of rows) {
+    const id = String(row.dispute_id || row.id)
+    const updated = String(row.update_time || '')
+    const cached = stored[id]
+    if (cached && cached.updated === updated && cached.detail) {
+      kept[id] = cached
+      out.push(cached.detail)
+      continue
+    }
+    if (missing) { out.push(row); continue }
+    const read = await callTool($, 'get_dispute', { dispute_id: id })
+    if (read.error) {
+      if (isToolMissing(read.error)) { missing = true; unavailable.push('get_dispute') }
+      else await $.log.warn(`get_dispute ${id}: ${read.error}`)
+      out.push(row)
+      continue
+    }
+    const detail = isObject(read.value) ? { ...row, ...read.value } : row
+    kept[id] = { updated, detail }
+    out.push(detail)
+  }
+  if (JSON.stringify(kept) !== JSON.stringify(stored)) await $.store.set(DETAILS_KEY, kept)
+  return out
+}
+
+/** The dispute under review now, or null. */
+let reviewing = null
+
+/**
+ * Starts an agent run to review the first open dispute (soonest deadline
+ * first) with no review for its current version, unless any run is in
+ * flight, the host offers no `$.app.analyze`, or that version was tried
+ * within ANALYSIS_RETRY_MS. Answers {run} when it started one, else null.
+ */
+export async function startReview($, facts, reviews, now, onDone) {
+  if (reviewing || analyzing || typeof $.app.analyze !== 'function') return null
+  const tried = (await $.store.get(REVIEWS_KEY)) || {}
+  const key = f => `${f.id}@${f.updated}`
+  const due = [...(facts || [])]
+    .sort((a, b) => (a.daysLeft ?? 999) - (b.daysLeft ?? 999))
+    .find(f => !latestReview(reviews, f.id, f.updated) && !(now - (tried[key(f)] || 0) < ANALYSIS_RETRY_MS))
+  if (!due) return null
+  const kept = Object.fromEntries(Object.entries(tried).filter(([, at]) => now - at < 30 * 86_400_000))
+  await $.store.set(REVIEWS_KEY, { ...kept, [key(due)]: now })
+  reviewing = due.id
+  let answer
+  try {
+    answer = $.app.analyze({ title: `Review dispute ${due.id}`, prompt: reviewPrompt(due) })
+  } catch (err) {
+    answer = Promise.reject(err)
+  }
+  const run = Promise.resolve(answer)
+    .then(r => r || { ok: false, reason: 'no answer' }, err => ({ ok: false, reason: err instanceof Error ? err.message : String(err) }))
+    .then(async r => {
+      reviewing = null
+      if (!r.ok) await $.log.warn(`review of dispute ${due.id} ended without a result: ${r.reason}`)
+      await onDone(r)
+    })
+    .catch(async err => { await $.log.warn(`after the review of ${due.id}: ${err instanceof Error ? err.message : String(err)}`) })
+  return { run }
+}
+
+/** What the agent is asked when a dispute needs a review. */
+export function reviewPrompt(f) {
+  return [
+    `Dispute ${f.id} (${f.claim}, ${f.amount}) waits on the merchant${f.respondBy ? `, who must respond by ${f.respondBy.slice(0, 10)}` : ''}.`,
+    'Review it as the Disputes section of AGENTS.md says: start from its entry in data/disputes.json, read it with get_dispute, check the order and payments, and apply the paypal-rules skill.',
+    `Then add one review to data/reviews.json with "disputeId": "${f.id}", keeping the reviews already there.`,
+    'Change nothing on PayPal. End with the verdict and its headline.',
+  ].join(' ')
+}
+
+/** Republishes the review cards and the dispute to-dos after a review ended. */
+export async function refreshReviews($) {
+  const state = (await $.app.state.get()) || {}
+  const reviews = listOf(await readJsonFile($, REVIEWS_FILE), 'reviews')
+  const cases = (Array.isArray(state.cases) ? state.cases : []).map(c => withReview(c, factsSeen, reviews))
+  await publishState($, state, {
+    ...state,
+    ...todoView(cases),
+    disputeReviews: reviewCards(factsSeen, reviews, reviewing || ''),
+    summary: { ...(state.summary || {}), reviewsNote: reviewsNote(factsSeen, reviews) },
+  })
+}
+
+/** A dispute's to-do with the AI's verdict leading its detail. */
+function withReview(c, facts, reviews) {
+  if (c.kind !== 'dispute') return c
+  const f = (facts || []).find(x => x.id === c.ref)
+  const line = reviewLine(latestReview(reviews, c.ref, f ? f.updated : ''))
+  const base = String(c.detail || '').replace(/^AI: .*?\n\n?/, '')
+  return { ...c, detail: line ? `${line}\n\n${base}` : base }
+}
+
+/** The review section's subtitle. */
+function reviewsNote(facts, reviews) {
+  const n = (facts || []).length
+  if (n === 0) return 'No dispute waits on you'
+  const done = facts.filter(f => latestReview(reviews, f.id, f.updated)).length
+  return `${n} waiting on you · ${done === n ? 'all reviewed by the AI' : `${done} of ${n} reviewed by the AI`} · nothing changes on PayPal until you confirm`
 }
 
 /** The alert week being analyzed now, {id, week}, or null. */
@@ -254,7 +400,7 @@ let analyzing = null
  * answers {run} (settling once `onDone` ran) when it started one, else null.
  */
 export async function startAnalysis($, alerts, now, onDone) {
-  if (analyzing || typeof $.app.analyze !== 'function') return null
+  if (analyzing || reviewing || typeof $.app.analyze !== 'function') return null
   const tried = (await $.store.get(ANALYSES_KEY)) || {}
   const due = (alerts || []).find(a => a.tripped && !a.analyzed && !(now - (tried[`${a.id}@${a.week}`] || 0) < ANALYSIS_RETRY_MS))
   if (!due) return null
@@ -588,7 +734,7 @@ export function isDone(handled, id, today) {
 // ---- deriving (pure) -------------------------------------------------------
 
 /** The dashboard state from the reads. Pure: no `$`, so tests can drive it. */
-export function deriveState({ previous = {}, raw = {}, orders = [], alertRules = [], findings = [], running = null, openInvoices = [], unread = 0, inboxFiles = [], handled = [], errors = {}, unavailable = [], now }) {
+export function deriveState({ previous = {}, raw = {}, orders = [], alertRules = [], findings = [], facts = [], reviews = [], reviewing = '', running = null, openInvoices = [], unread = 0, inboxFiles = [], handled = [], errors = {}, unavailable = [], now }) {
   const disputes = normalizeDisputes(raw.disputes)
   const transactions = normalizeTransactions(raw.transactions)
   const today = dateOf(now)
@@ -596,7 +742,7 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
   const alerts = viewAlerts(checkRules(alertRules, orders, today), findings, running)
   const paypalAlerts = disputeAlerts(disputes, now)
   const found = deriveCases({ invoices: openInvoices, disputes, transactions, inboxFiles, now })
-  const live = [...found, ...alertTodos(alerts, findings, now)]
+  const live = [...found.map(c => withReview(c, facts, reviews)), ...alertTodos(alerts, findings, now)]
   const cases = openTodos(live, handled, today)
   const errorNames = Object.keys(errors)
   const noteParts = [`Synced ${timeOfDay(now)}`]
@@ -611,7 +757,9 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
     paypalAlerts,
     ruleCards: ruleCards(alerts, paypalAlerts),
     findings: viewFindings(findings),
+    disputeReviews: reviewCards(facts, reviews, reviewing),
     summary: {
+      reviewsNote: reviewsNote(facts, reviews),
       alertsNote: alertsNote(alerts, paypalAlerts),
       findingsNote: findingsNote(findings),
       ...todoSummary(cases),
