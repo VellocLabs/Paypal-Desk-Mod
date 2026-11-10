@@ -46,8 +46,9 @@
   },
   "cases": [],
   "disputeCases": [],
+  "alertCases": [],
   "otherCases": [],
-  "groups": { "disputesTitle": "", "disputesNote": "", "otherTitle": "" },
+  "groups": { "disputesTitle": "", "disputesNote": "", "alertTitle": "", "otherTitle": "" },
   "disputes": [],
   "sync": {
     "ok": false,

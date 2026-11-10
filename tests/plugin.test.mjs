@@ -12,7 +12,7 @@ import { describeCall, isWriteTool, register as registerGuard } from '../hooks/g
 import {
   DONE_DAYS, doneTodos, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
-  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, disputeDetails, startReview, refreshReviews,
+  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, disputeDetails, startReview, refreshReviews, todoView,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
 import { DEFAULT_RULES } from '../lib/alerts.js'
@@ -720,7 +720,7 @@ test('events carry the emoji and the rule they came from; rule cards are setting
 
 test('a done to-do shows a green check and a menu with Undo and Delete', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
-  assert.match(board, /^todo = Column\(\[todoHead, disputeHead, disputeList, otherHead, todoList, doneList, alertsHead/m)
+  assert.match(board, /^todo = Column\(\[todoHead, disputeHead, disputeList, alertTodoHead, alertTodoList, otherHead, todoList, doneList, alertsHead/m)
   assert.match(board, /^doneCard = Card\(doneRow\)$/m, 'the same card as an open to-do')
   assert.match(board, /^doneIcon = Text\("✅"\)$/m)
   assert.match(board, /^doneTitle = Heading\(\$title, 3, \$doneNote\)$/m)
@@ -798,7 +798,7 @@ test('a sync writes the dispute facts, starts the review at once, and the disput
   assert.match(asked[0].prompt, /Change nothing on PayPal/)
   const card = world.state.value.disputeCases[0]
   assert.deepEqual([card.id, card.title, card.source, card.verdictLabel, card.againLabel], ['dispute:PP-D-7', 'Item not received · $45.00 · respond within 2 days', 'PayPal dispute PP-D-7', 'Reviewing…', '⏳ Reviewing…'])
-  assert.deepEqual(world.state.value.groups, { disputesTitle: 'Disputes', disputesNote: '1 waiting on you · $45.00 at stake · 1 not reviewed yet', otherTitle: 'Other to-dos' })
+  assert.deepEqual(world.state.value.groups, { disputesTitle: 'Disputes', disputesNote: '1 waiting on you · $45.00 at stake · 1 not reviewed yet', alertTitle: '', otherTitle: 'Other to-dos' })
   assert.equal(card.detail, 'Payment TX-9 · respond within 2 days')
   assert.ok(!world.state.value.otherCases.some(c => c.kind === 'dispute'))
 
@@ -853,4 +853,19 @@ test('the dispute card binds only fields a dispute to-do has, and its buttons ac
   const actions = new Set(lines.flatMap(l => [...l.matchAll(/Event\("(\w+)"/g)].map(m => m[1])))
   const local = readJson('.claude-plugin/plugin.json').templates.board.app.localActions
   for (const action of actions) assert.ok(local.includes(action), `${action} is handled on the board`)
+})
+
+test('alert to-dos are their own group with no badge; a group heading shows only beside another group', () => {
+  const alert = { id: 'alert:a', kind: 'alert' }
+  const invoice = { id: 'invoice:1', kind: 'overdue_invoice' }
+  const dispute = { id: 'dispute:X', kind: 'dispute', value: 10, verdict: 'refund' }
+  const all = todoView([dispute, alert, invoice])
+  assert.deepEqual([all.disputeCases, all.alertCases, all.otherCases].map(g => g.map(c => c.id)), [['dispute:X'], ['alert:a'], ['invoice:1']])
+  assert.deepEqual([all.groups.disputesTitle, all.groups.alertTitle, all.groups.otherTitle], ['Disputes', 'Alert to-dos', 'Other to-dos'])
+  assert.deepEqual([todoView([alert]).groups.alertTitle, todoView([alert, invoice]).groups.otherTitle], ['', 'Other to-dos'])
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  const card = board.split('\n').filter(l => /^alertTodo[A-Z]\w* = /.test(l))
+  assert.ok(card.length && !card.some(l => l.includes('Badge(')), 'an alert to-do has no badge')
+  assert.match(board, /^disputeTop = Row\(\[disputeTitle, disputeVerdictBadge\]/m)
+  assert.match(board, /^disputeButtons = Row\(\[disputeAgain, disputeDetails, disputeDone\]/m)
 })

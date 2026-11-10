@@ -812,17 +812,22 @@ export function openTodos(cases, handled, today) {
 
 /** The to-do list and its first few. */
 /** The to-do list, split for the board: dispute cards (with their review) first, then the rest. */
-function todoView(cases) {
+export function todoView(cases) {
   const disputeCases = cases.filter(c => c.kind === 'dispute')
-  const otherCases = cases.filter(c => c.kind !== 'dispute')
+  const alertCases = cases.filter(c => c.kind === 'alert')
+  const otherCases = cases.filter(c => c.kind !== 'dispute' && c.kind !== 'alert')
+  // A group's heading shows when another group is on the board too; the disputes heading always shows its totals.
+  const several = [disputeCases, alertCases, otherCases].filter(g => g.length).length > 1
   return {
     cases,
     disputeCases,
+    alertCases,
     otherCases,
     groups: {
       disputesTitle: disputeCases.length ? 'Disputes' : '',
       disputesNote: disputesNote(disputeCases),
-      otherTitle: disputeCases.length && otherCases.length ? 'Other to-dos' : '',
+      alertTitle: several && alertCases.length ? 'Alert to-dos' : '',
+      otherTitle: several && otherCases.length ? 'Other to-dos' : '',
     },
     needs: cases.slice(0, NEEDS_SHOWN),
   }

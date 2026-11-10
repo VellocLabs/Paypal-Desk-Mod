@@ -83,9 +83,9 @@ Speak of them as orders and sales, not as invoices.
 Each open dispute that waits on the merchant is a two-line card under the
 *Disputes* heading at the top of the *Actions* tab; the heading counts the
 cards, the money at stake and the verdicts. Line one is the claim, the
-amount and the deadline. Line two is your verdict as a badge (**Agree to
-refund**, **Contest it** or **Needs checking**) with your review's
-`headline` after it, so keep the headline to the deciding fact: at most 15
+amount and the deadline, with your verdict as a badge after it (**Agree
+to refund**, **Contest it** or **Needs checking**). Line two is your
+review's `headline` on its own, so keep the headline to the deciding fact: at most 15
 words, and do not repeat the amount, the claim or the verdict. *Details*
 opens the whole review: the verdict with its confidence, why, the next
 steps, what the buyer says, the reply draft and what the desk checked.
@@ -370,8 +370,8 @@ missing.
 | `alerts` | Your rules as checked: `{id, name, rule, condition, headline, summary, subject, value, delta, trend, better, reading, week, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
 | `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
-| `disputeCases`, `otherCases` | `cases` split for the board: the dispute cards first, then the rest. A dispute case adds its review: `{reviewState, verdict, verdictLabel, verdictTone, verdictLine, againLabel, detailsTitle, detailsSubtitle, detailsLabel, detailsTone, detailsNote, detailsBody}`; `reviewState` is `pending`, `reviewing` or `reviewed`; `detailsBody` is Markdown |
-| `groups` | The headings over the two groups of to-dos: `{disputesTitle, disputesNote, otherTitle}`; a title is empty when its heading is not shown |
+| `disputeCases`, `alertCases`, `otherCases` | `cases` split for the board: the dispute cards, then the to-dos of tripped alerts (shown with no badge), then the rest. A dispute case adds its review: `{reviewState, verdict, verdictLabel, verdictTone, verdictLine, againLabel, detailsTitle, detailsSubtitle, detailsLabel, detailsTone, detailsNote, detailsBody}`; `reviewState` is `pending`, `reviewing` or `reviewed`; `detailsBody` is Markdown |
+| `groups` | The headings over the groups of to-dos: `{disputesTitle, disputesNote, alertTitle, otherTitle}`; a title is empty when its heading is not shown (the alert and other headings show only beside another group) |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it), and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
 | `doneCases` | The done list, latest first: the open card's fields plus `doneNote` ("Alert rule: Refund rate jump · Done Nov 9") and `doneLabel` ("✓ Done Nov 9") |
