@@ -939,16 +939,9 @@ export function viewFindings(findings) {
     }))
 }
 
+/** The board as it was, for a sync that could not reach PayPal: every tab keeps its last figures. */
 function emptyState(previous) {
-  return {
-    week: previous.week,
-    trends: previous.trends,
-    salesNote: previous.salesNote,
-    summary: previous.summary || {},
-    cases: previous.cases || [],
-    alerts: previous.alerts || [],
-    paypalAlerts: previous.paypalAlerts || [],
-  }
+  return { ...previous, summary: previous.summary || {}, cases: previous.cases || [] }
 }
 
 /** Invoice-list rows, flat (MCP) or nested (REST), as the fields the cases use. */

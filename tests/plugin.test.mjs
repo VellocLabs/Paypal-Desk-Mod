@@ -411,8 +411,9 @@ test('syncOnce asks Transaction Search for a 30-day window of ISO 8601 date-time
 
 test('syncOnce without a connection publishes the error and keeps the board', async () => {
   const world = fakeDollar({ answers: toolAnswers, connected: false })
-  world.state.value = { week: { range: 'kept' }, cases: [{ id: 'kept' }] }
+  world.state.value = { week: { range: 'kept' }, cases: [{ id: 'kept' }], trends: { range: 'kept' }, ruleCards: [{ id: 'paypal-disputes' }], disputeReviews: [{ id: 'PP-D-1' }], findings: [{ id: 'f' }] }
   await syncOnce(world.$, { now: NOW })
+  for (const key of ['trends', 'ruleCards', 'disputeReviews', 'findings']) assert.ok(world.state.value[key], `${key} is kept`)
   assert.equal(world.state.value.sync.ok, false)
   assert.match(world.state.value.sync.note, /sign-in required/)
   assert.deepEqual(world.state.value.week, { range: 'kept' })
