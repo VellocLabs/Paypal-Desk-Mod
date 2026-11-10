@@ -84,6 +84,8 @@ export function register(on) {
 
   on('app.start', async ($, e) => {
     if (timer) timer.cancel()
+    // A stopped module's badge is cleared by the host, so a start sends the count again.
+    badgeSent = undefined
     const inbox = e.folders && e.folders.read && e.folders.read[0]
     const tick = async () => {
       if (running) return
@@ -528,6 +530,17 @@ export async function publishState($, previous, next) {
     patches.push(value === undefined ? { path: `/${key}` } : { path: `/${key}`, value })
   }
   if (patches.length) await $.app.publish(patches)
+  await showBadge($, next)
+}
+
+let badgeSent
+
+/** Puts `summary.todoCount` on the app's topbar icon (0 shows none); skipped where the host has no `$.app.badge` or the count is unchanged. */
+export async function showBadge($, next) {
+  const count = next && next.summary && next.summary.todoCount
+  if (typeof $.app.badge !== 'function' || !Number.isInteger(count) || count < 0 || count === badgeSent) return
+  await $.app.badge(count)
+  badgeSent = count
 }
 
 /**

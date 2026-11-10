@@ -12,7 +12,7 @@ import { describeCall, isWriteTool, register as registerGuard } from '../hooks/g
 import {
   DONE_DAYS, doneTodos, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
-  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, disputeDetails, startReview, refreshReviews, todoView,
+  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, disputeDetails, startReview, refreshReviews, todoView, showBadge,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
 import { DEFAULT_RULES } from '../lib/alerts.js'
@@ -685,6 +685,33 @@ test('mark_done records the day in the handled file and drops the to-do from the
   assert.deepEqual(await handleAction(world.$, { action: 'delete_todo', context: { id: 'b' } }), { handled: true })
   assert.deepEqual(JSON.parse(files['data/handled.json']).at(-1), { id: 'b', at: '2026-11-10', state: 'deleted', todo: row('b') })
   assert.deepEqual([world.state.value.cases.map(c => c.id), world.state.value.doneCases], [['a'], []], 'deleted: on neither list')
+})
+
+test('the open to-do count goes on the topbar icon with $.app.badge: sent when it changes, again after app.start, never without the host call', async () => {
+  const badges = []
+  const $ = { app: { badge: async n => { badges.push(n) } } }
+  await showBadge($, { summary: { todoCount: 3 } })
+  await showBadge($, { summary: { todoCount: 3 } })
+  await showBadge($, { summary: {} })
+  await showBadge($, { summary: { todoCount: 0 } })
+  assert.deepEqual(badges, [3, 0], 'unchanged and absent counts send nothing; 0 clears the icon')
+  await showBadge({ app: {} }, { summary: { todoCount: 5 } })
+
+  const handlers = {}
+  registerBackground((event, handler) => { handlers[event] = handler })
+  const world = fakeDollar({ answers: toolAnswers })
+  world.$.app.badge = async n => { badges.push(n) }
+  world.$.clock.every = () => ({ cancel() {} })
+  await handlers['app.start'](world.$, {})
+  await whenIdle()
+  assert.ok(badges.length > 2 && Number.isInteger(badges.at(-1)), 'the first sync after app.start sends the count again')
+  await handlers['app.stop'](world.$, {})
+  const row = id => ({ id, kind: 'overdue_invoice', title: id, detail: '', tone: 'warning', label: 'Overdue', since: NOW, ask: `Ask ${id}` })
+  world.state.value = { cases: [row('a'), row('b')], needs: [], summary: {} }
+  world.$.fs.exists = async () => false
+  await handleAction(world.$, { action: 'mark_done', context: { id: 'b' } })
+  assert.equal(badges.at(-1), 1, 'a local action changes the badge at once')
+  assert.equal(world.state.value.summary.todoCount, 1)
 })
 
 test('the done list shows to-dos done within DONE_DAYS, latest first, live when the case still exists; deleted and expired ones are left out', () => {
