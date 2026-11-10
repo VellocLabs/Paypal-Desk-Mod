@@ -40,8 +40,8 @@ Speak of them as orders and sales, not as invoices.
   a return request; a return may be one way to settle it. A chargeback is
   the same complaint made through the buyer's card issuer.
 - **Review a dispute.** See *Disputes* below: the module starts a review
-  run for each open dispute that waits on the merchant, and *Review again*
-  on its card starts another; no chat is involved.
+  run for each open dispute that waits on the merchant; no chat is
+  involved.
 - **Mark a to-do done.** *Mark done* on the board moves a to-do from the
   open list to the done list below it, for 7 days: the same card, its emoji
   turned to ✅, "Done Nov 9" by its source, and a *⋯* menu in place of the
@@ -89,9 +89,13 @@ review's `headline` on its own, so keep the headline to the deciding fact: at mo
 words, and do not repeat the amount, the claim or the verdict. *Details*
 opens the whole review: the verdict with its confidence, why, the next
 steps, what the buyer says, the reply draft and what the desk checked.
-*Review again* starts a new review run at once (⏳ while it runs, or while
-it waits for another run). Until you have written a review the second
-line shows the lean of the desk's rules.
+*Ask AI* opens the chat with the whole review attached as a quote and the
+box left empty for the person's question. When a message quotes a review
+that way, answer about that dispute from the quote, check PayPal again if
+the question needs it, and if what you find changes the verdict, write a
+new review to `data/reviews.json` so the card shows it. Until a review is
+written the second line shows the lean of the desk's rules (⏳ while a
+review run is on it).
 
 **When.** The module starts an agent run in this folder for each such
 dispute with no review for its current version (the dispute's
@@ -370,8 +374,8 @@ missing.
 | `alerts` | Your rules as checked: `{id, name, rule, condition, headline, summary, subject, value, delta, trend, better, reading, week, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
 | `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
-| `disputeCases`, `alertCases`, `otherCases` | `cases` split for the board: the dispute cards, then the to-dos of tripped alerts (shown with no badge), then the rest. A dispute case adds its review: `{reviewState, verdict, verdictLabel, verdictTone, verdictLine, againLabel, detailsTitle, detailsSubtitle, detailsLabel, detailsTone, detailsNote, detailsBody}`; `reviewState` is `pending`, `reviewing` or `reviewed`; `detailsBody` is Markdown |
-| `groups` | The headings over the groups of to-dos: `{disputesTitle, disputesNote, alertTitle, otherTitle}`; a title is empty when its heading is not shown (the alert and other headings show only beside another group) |
+| `disputeCases`, `alertCases`, `otherCases` | `cases` split for the board: the dispute cards, then the to-dos of tripped alerts (shown with no badge), then the rest. A dispute case adds its review: `{reviewState, verdict, verdictLabel, verdictTone, verdictLine, againLabel, detailsTitle, detailsSubtitle, detailsLabel, detailsTone, detailsNote, detailsBody, discussQuote}`; `discussQuote` is the review in Markdown that *Ask AI* attaches; `reviewState` is `pending`, `reviewing` or `reviewed`; `detailsBody` is Markdown |
+| `groups` | The headings over the groups of to-dos: `{disputesTitle, disputesNote, otherTitle}`; a title is empty when its heading is not shown (*Other to-dos*, over the alert to-dos and the rest, shows only under the disputes) |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it) — the background module also puts the same count on the app's topbar icon with `$.app.badge` —, and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
 | `doneCases` | The done list, latest first: the open card's fields plus `doneNote` ("Alert rule: Refund rate jump · Done Nov 9") and `doneLabel` ("✓ Done Nov 9") |

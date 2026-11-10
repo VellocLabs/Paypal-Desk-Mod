@@ -71,8 +71,8 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   background, with the `paypal-rules` skill, and the dispute's card says
   the verdict in one line: *Agree to refund*, *Contest it* or *Needs
   checking*, with its reason. *Details* opens why, the next steps, what
-  was checked and a reply draft for the Resolution Center; *Review again*
-  reruns it on the spot. It never changes anything on PayPal on its own.
+  was checked and a reply draft for the Resolution Center; *Ask AI* opens
+  the chat with the review attached as a quote, for your follow-up question. It never changes anything on PayPal on its own.
 - **Confirmation** (`hooks/guard.js`): a PayPal tool that creates, sends,
   refunds, cancels or accepts anything opens a confirmation dialog, whatever
   the session's permission mode. Reads pass.

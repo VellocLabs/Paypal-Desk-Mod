@@ -416,6 +416,11 @@ function withReview(c, facts, reviews) {
     value: f.value,
     reviewState,
     againLabel: waiting ? '⏳ Queued…' : card.againLabel,
+    discussQuote: [
+      `**PayPal dispute ${f.id}**: ${[f.claim, f.amount, due].filter(Boolean).join(' · ')}`,
+      `**${card.detailsLabel}** (${card.detailsNote})`,
+      card.detailsBody,
+    ].join('\n\n'),
   }
 }
 
@@ -829,8 +834,7 @@ export function todoView(cases) {
   const disputeCases = cases.filter(c => c.kind === 'dispute')
   const alertCases = cases.filter(c => c.kind === 'alert')
   const otherCases = cases.filter(c => c.kind !== 'dispute' && c.kind !== 'alert')
-  // A group's heading shows when another group is on the board too; the disputes heading always shows its totals.
-  const several = [disputeCases, alertCases, otherCases].filter(g => g.length).length > 1
+  // Alert to-dos and the rest share one heading, shown under the disputes; the disputes heading always shows its totals.
   return {
     cases,
     disputeCases,
@@ -839,8 +843,7 @@ export function todoView(cases) {
     groups: {
       disputesTitle: disputeCases.length ? 'Disputes' : '',
       disputesNote: disputesNote(disputeCases),
-      alertTitle: several && alertCases.length ? 'Alert to-dos' : '',
-      otherTitle: several && otherCases.length ? 'Other to-dos' : '',
+      otherTitle: disputeCases.length && (alertCases.length || otherCases.length) ? 'Other to-dos' : '',
     },
     needs: cases.slice(0, NEEDS_SHOWN),
   }

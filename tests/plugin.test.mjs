@@ -747,7 +747,7 @@ test('events carry the emoji and the rule they came from; rule cards are setting
 
 test('a done to-do shows a green check and a menu with Undo and Delete', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
-  assert.match(board, /^todo = Column\(\[todoHead, disputeHead, disputeList, alertTodoHead, alertTodoList, otherHead, todoList, doneList, alertsHead/m)
+  assert.match(board, /^todo = Column\(\[todoHead, disputeHead, disputeList, otherHead, alertTodoList, todoList, doneList, alertsHead/m)
   assert.match(board, /^doneCard = Card\(doneRow\)$/m, 'the same card as an open to-do')
   assert.match(board, /^doneIcon = Text\("✅"\)$/m)
   assert.match(board, /^doneTitle = Heading\(\$title, 3, \$doneNote\)$/m)
@@ -825,7 +825,7 @@ test('a sync writes the dispute facts, starts the review at once, and the disput
   assert.match(asked[0].prompt, /Change nothing on PayPal/)
   const card = world.state.value.disputeCases[0]
   assert.deepEqual([card.id, card.title, card.source, card.verdictLabel, card.againLabel], ['dispute:PP-D-7', 'Item not received · $45.00 · respond within 2 days', 'PayPal dispute PP-D-7', 'Reviewing…', '⏳ Reviewing…'])
-  assert.deepEqual(world.state.value.groups, { disputesTitle: 'Disputes', disputesNote: '1 waiting on you · $45.00 at stake · 1 not reviewed yet', alertTitle: '', otherTitle: 'Other to-dos' })
+  assert.deepEqual(world.state.value.groups, { disputesTitle: 'Disputes', disputesNote: '1 waiting on you · $45.00 at stake · 1 not reviewed yet', otherTitle: 'Other to-dos' })
   assert.equal(card.detail, 'Payment TX-9 · respond within 2 days')
   assert.ok(!world.state.value.otherCases.some(c => c.kind === 'dispute'))
 
@@ -872,27 +872,31 @@ test('the dispute card binds only fields a dispute to-do has, and its buttons ac
   assert.match(board, /^disputeList = Column\(_template\(\$\/data\/disputeCases, disputeCard\)\)$/m)
   assert.match(board, /^disputeDetails = Modal\(disputeDetailsButton, disputeView\)$/m)
   const [card] = reviewCards([{ id: 'X', updated: '', daysLeft: 3, respondBy: day(3), stage: 'CLAIM', claim: 'c', amount: '$1.00', order: null, checks: [], lean: { verdict: 'refund', because: 'b' }, buyerSays: '' }], [], '')
-  const todo = { ...card, id: 'dispute:X', kind: 'dispute', title: 't', source: 's', detail: 'd', icon: '🔔', label: 'Dispute', tone: 'warning', ref: 'X' }
+  const todo = { ...card, id: 'dispute:X', kind: 'dispute', title: 't', source: 's', detail: 'd', icon: '🔔', label: 'Dispute', tone: 'warning', ref: 'X', discussQuote: 'q' }
   const lines = board.split('\n').filter(line => /^dispute[A-Z]\w* = /.test(line))
   const fields = new Set(lines.flatMap(line => [...line.matchAll(/\$([a-zA-Z]\w*)/g)].map(m => m[1])))
   for (const field of fields) assert.ok(field in todo, `the card has no ${field}`)
-  assert.ok(!lines.some(l => l.includes('"compose"')), 'no button drafts into the chat box')
+  const composes = lines.filter(l => l.includes('"compose"'))
+  assert.deepEqual(composes, ['disputeAsk = Button(disputeAskText, "primary", Event("compose", {quote: $discussQuote}))'], 'Ask AI only attaches the review; it drafts no words')
   const actions = new Set(lines.flatMap(l => [...l.matchAll(/Event\("(\w+)"/g)].map(m => m[1])))
   const local = readJson('.claude-plugin/plugin.json').templates.board.app.localActions
-  for (const action of actions) assert.ok(local.includes(action), `${action} is handled on the board`)
+  // `compose` is the page's own: it fills the composer and never reaches the module or the model.
+  for (const action of actions) assert.ok(action === 'compose' || local.includes(action), `${action} is handled on the board`)
 })
 
-test('alert to-dos are their own group with no badge; a group heading shows only beside another group', () => {
+test('alert to-dos have no badge and share the Other to-dos heading, shown under the disputes', () => {
   const alert = { id: 'alert:a', kind: 'alert' }
   const invoice = { id: 'invoice:1', kind: 'overdue_invoice' }
   const dispute = { id: 'dispute:X', kind: 'dispute', value: 10, verdict: 'refund' }
   const all = todoView([dispute, alert, invoice])
   assert.deepEqual([all.disputeCases, all.alertCases, all.otherCases].map(g => g.map(c => c.id)), [['dispute:X'], ['alert:a'], ['invoice:1']])
-  assert.deepEqual([all.groups.disputesTitle, all.groups.alertTitle, all.groups.otherTitle], ['Disputes', 'Alert to-dos', 'Other to-dos'])
-  assert.deepEqual([todoView([alert]).groups.alertTitle, todoView([alert, invoice]).groups.otherTitle], ['', 'Other to-dos'])
+  assert.deepEqual([all.groups.disputesTitle, all.groups.otherTitle], ['Disputes', 'Other to-dos'])
+  assert.equal(todoView([dispute, alert]).groups.otherTitle, 'Other to-dos')
+  assert.equal(todoView([alert, invoice]).groups.otherTitle, '')
+  assert.ok(!('alertTitle' in all.groups))
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
   const card = board.split('\n').filter(l => /^alertTodo[A-Z]\w* = /.test(l))
   assert.ok(card.length && !card.some(l => l.includes('Badge(')), 'an alert to-do has no badge')
   assert.match(board, /^disputeTop = Row\(\[disputeTitle, disputeVerdictBadge\]/m)
-  assert.match(board, /^disputeButtons = Row\(\[disputeAgain, disputeDetails, disputeDone\]/m)
+  assert.match(board, /^disputeButtons = Row\(\[disputeDetails, disputeAsk, disputeDone\]/m)
 })
