@@ -157,6 +157,16 @@ PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:disputes -- --dry-run
 PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:disputes
 ```
 
+PayPal's sandbox chargeback endpoint answers 500 for a card capture. With
+`--wallet` each payment is made from the sandbox personal account instead:
+the first run prints an approval link per payment; approve each one signed
+in as the buyer, then run the same command again to capture the payments and
+open the chargebacks.
+
+```bash
+PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:disputes -- --wallet
+```
+
 ### Known PayPal issues
 
 **Refunded invoices empty the list.**

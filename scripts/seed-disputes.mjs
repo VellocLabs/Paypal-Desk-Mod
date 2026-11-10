@@ -11,6 +11,7 @@
  *   node scripts/seed-disputes.mjs --dry-run
  *   node scripts/seed-disputes.mjs
  *   node scripts/seed-disputes.mjs --only duplicate
+ *   node scripts/seed-disputes.mjs --wallet     (buyer approves each payment by link)
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -24,6 +25,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const journalPath = join(root, '.seed', 'disputes.json')
 const args = process.argv.slice(2)
 const dryRun = args.includes('--dry-run')
+/** Pay from the buyer's PayPal account (approved by link) instead of the test card: the chargeback endpoint refuses card captures. */
+const wallet = args.includes('--wallet')
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : ''
 const today = dateOf(Date.now())
 
@@ -43,7 +46,9 @@ const journal = existsSync(journalPath) ? JSON.parse(readFileSync(journalPath, '
 const used = new Set(Object.values(journal).map(e => e.number))
 const plan = CASES.filter(c => !only || c.key === only).map(c => {
   if (journal[c.key] && journal[c.key].chargeback) return { ...c, done: true, number: journal[c.key].number }
-  const number = journal[c.key] ? journal[c.key].number : findOrder(c.pick)
+  // A case begun with the test card starts again on a fresh order: PayPal refuses an invoice id twice.
+  const restart = wallet && journal[c.key] && !journal[c.key].wallet
+  const number = journal[c.key] && !restart ? journal[c.key].number : findOrder(c.pick)
   used.add(number)
   return { ...c, number, order: makeOrder(number, today) }
 })
@@ -63,11 +68,25 @@ if (!clientId || !clientSecret) {
 const client = createClient({ clientId, clientSecret, rpm: 30 })
 
 let failed = 0
+const waiting = []
 for (const c of plan.filter(p => !p.done)) {
   const entry = journal[c.key] ?? (journal[c.key] = { number: c.number })
   try {
-    entry.captureId ??= await pay(c.order, `pd-dispute-${c.number}`)
-    if (c.twice) entry.secondCaptureId ??= await pay(c.order, `pd-dispute-${c.number}-again`, { second: true })
+    if (wallet) {
+      if (!entry.wallet) { delete entry.captureId; delete entry.secondCaptureId; entry.number = c.number }
+      entry.wallet ??= {}
+      entry.wallet.first = await walletStep(c.order, entry.wallet.first, `pd-wallet-${c.number}`, false)
+      if (c.twice) entry.wallet.second = await walletStep(c.order, entry.wallet.second, `pd-wallet-${c.number}-again`, true)
+      save()
+      const steps = [entry.wallet.first, ...(c.twice ? [entry.wallet.second] : [])]
+      const open = steps.filter(s => !s.captureId)
+      if (open.length) { waiting.push(...open.map(s => `${c.key}: ${s.approve}`)); continue }
+      entry.captureId = entry.wallet.first.captureId
+      if (c.twice) entry.secondCaptureId = entry.wallet.second.captureId
+    } else {
+      entry.captureId ??= await pay(c.order, `pd-dispute-${c.number}`)
+      if (c.twice) entry.secondCaptureId ??= await pay(c.order, `pd-dispute-${c.number}-again`, { second: true })
+    }
     save()
     const target = c.twice ? entry.secondCaptureId : entry.captureId
     const answer = await client.request('POST', '/v2/customer-support/process-chargeback', {
@@ -86,9 +105,42 @@ for (const c of plan.filter(p => !p.done)) {
   }
 }
 
+if (waiting.length) {
+  console.log('\nApprove each payment as the sandbox *personal* (buyer) account, then run the same command again:')
+  for (const line of waiting) console.log(`  ${line}`)
+}
 console.log(`\nDone, ${failed} failed.${failed ? ' Run the same command again to retry: finished steps are skipped.' : ''}`)
 console.log('Disputes show in the desk at its next sync (5 minutes, or restart Velloc). The order behind each')
 console.log('one is matched through Transaction Search, which lists new payments only after a few hours.')
+
+/**
+ * One PayPal-wallet payment of a store order, a step per run: create the
+ * order and hand out its approval link; once the buyer approved it,
+ * capture it. Answers the step's record {orderId, approve, captureId?}.
+ */
+async function walletStep(order, step, requestId, second) {
+  if (step && step.captureId) return step
+  if (!step) {
+    const body = checkoutBody(order)
+    const unit = body.purchase_units[0]
+    delete unit.shipping
+    if (second) delete unit.invoice_id
+    body.payment_source = { paypal: { experience_context: {
+      return_url: 'https://example.com/paypal-desk/approved', cancel_url: 'https://example.com/paypal-desk/cancelled',
+      user_action: 'PAY_NOW', shipping_preference: 'NO_SHIPPING',
+    } } }
+    const answer = await client.request('POST', '/v2/checkout/orders', body, { 'PayPal-Request-Id': requestId })
+    const link = (answer.links || []).find(l => l.rel === 'payer-action' || l.rel === 'approve')
+    return { orderId: answer.id, approve: link ? link.href : '' }
+  }
+  const now = await client.request('GET', `/v2/checkout/orders/${step.orderId}`)
+  if (now.status !== 'APPROVED') return step
+  const answer = await client.request('POST', `/v2/checkout/orders/${step.orderId}/capture`, {}, { 'PayPal-Request-Id': `${requestId}-capture` })
+  const capture = captureOf(answer)
+  if (answer.status !== 'COMPLETED' || !capture) throw new Error(`order ${step.orderId} is ${answer.status}`)
+  console.log(`  paid ${order.number} $${(order.totalCents / 100).toFixed(2)} from the buyer's PayPal account (capture ${capture.id})`)
+  return { ...step, captureId: capture.id }
+}
 
 /** Pays one store order with the test card; a second payment of the same order carries no invoice id, which PayPal would refuse twice. */
 async function pay(order, requestId, { second = false } = {}) {
