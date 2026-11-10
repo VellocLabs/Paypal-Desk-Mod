@@ -40,8 +40,8 @@ Speak of them as orders and sales, not as invoices.
   a return request; a return may be one way to settle it. A chargeback is
   the same complaint made through the buyer's card issuer.
 - **Review a dispute.** See *Disputes* below: the module starts a review
-  run for each open dispute that waits on the merchant; in chat, *Adopt*
-  and *Ask AI* on its review card draft the request.
+  run for each open dispute that waits on the merchant, and *Review again*
+  on its card starts another; no chat is involved.
 - **Mark a to-do done.** *Mark done* on the board moves a to-do from the
   open list to the done list below it, for 7 days: the same card, its emoji
   turned to ✅, "Done Nov 9" by its source, and a *⋯* menu in place of the
@@ -80,16 +80,22 @@ Speak of them as orders and sales, not as invoices.
 
 ## Disputes
 
-The *Dispute review* section of the *Actions* tab has one card per open
-dispute that waits on the merchant. The card says what the buyer claims, the
-deadline, and your verdict: **Refund**, **Contest** or **Your call**, with
-why, what was checked, the next steps and a reply draft. Until you have
-written a review it shows the desk's own checks and the lean of its rules.
+Each open dispute that waits on the merchant is a card at the top of the
+*Actions* tab: what the buyer claims and the amount, then one line with
+your verdict as a badge (**Agree to refund**, **Contest it** or **Needs
+checking**) and your review's `headline` after it, then the payment and
+the deadline. *Details ›* opens the whole review: the verdict with its
+confidence, what the buyer says, why, the next steps, what the desk
+checked and the reply draft. *Review again* starts a new review run at
+once (⏳ while it runs, or while it waits for another run). Until you have
+written a review the line shows the lean of the desk's rules.
 
 **When.** The module starts an agent run in this folder for each such
 dispute with no review for its current version (the dispute's
 `update_time`), soonest deadline first, one run at a time, again after 6
-hours if that run wrote no review. A run the module started has no one to
+hours if that run wrote no review, and whenever the person presses *Review
+again*. The run's prompt carries the dispute's entry from
+`data/disputes.json`. A run the module started has no one to
 confirm anything: read, write the review, change nothing on PayPal.
 
 **Review.** In that run, or when asked in chat:
@@ -119,12 +125,12 @@ not proof of anything: say so. The reply draft is what the merchant pastes in Pa
 Resolution Center: two to four plain sentences to the buyer, or to PayPal
 for a contest, naming the evidence attached.
 
-**Adopt.** The card's primary button drafts "Go with your review of
-dispute …" into the chat box. For a refund: make the refund call when a tool
-here can (it opens a confirmation); when none can, say so and give the exact
-steps in the Resolution Center. For a contest: list the evidence to upload
-(order, payment, tracking, the listing) and give the reply. Evidence upload,
-offers and messages are not tools here.
+**Headline.** The card shows it as the verdict's one-line reason: one
+sentence, at most 15 words, a fact and what it means ("Charged twice
+three minutes apart: refund the second payment"). The steps say what the
+merchant does next and where: a refund or an answer in the Resolution
+Center when no tool here can (evidence upload, offers and messages are
+not tools here).
 
 ## Alerts
 
@@ -361,8 +367,7 @@ missing.
 | `alerts` | Your rules as checked: `{id, name, rule, condition, headline, summary, subject, value, delta, trend, better, reading, week, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
 | `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
-| `disputeReviews` | The *Dispute review* cards: `{id, state, claim, subject, verdictLabel, verdictTone, confidence, deadline, deadlineTone, headline, buyerSays, why, checks, steps, reply, replyBlock, source, adoptLabel, adoptAsk, reviewAsk, ask}`; `state` is `pending`, `reviewing` or `reviewed`; `why`, `checks`, `steps` and `replyBlock` are Markdown |
-| `summary.reviewsNote` | The *Dispute review* heading's subtitle |
+| `disputeCases`, `otherCases` | `cases` split for the board: the dispute cards first, then the rest. A dispute case adds its review: `{reviewState, verdictLabel, verdictTone, verdictLine, againLabel, detailsTitle, detailsSubtitle, detailsVerdict, buyerSays, why, steps, checks, replyBlock, reviewedAt}`; `reviewState` is `pending`, `reviewing` or `reviewed`; the details fields are Markdown |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it), and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
 | `doneCases` | The done list, latest first: the open card's fields plus `doneNote` ("Alert rule: Refund rate jump · Done Nov 9") and `doneLabel` ("✓ Done Nov 9") |

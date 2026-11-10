@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { storeOrder } from './fixtures.mjs'
-import { disputeFacts, disputeLean, latestReview, reasonFamily, reviewCards, reviewLine, waitsOnMerchant } from '../lib/disputes.js'
+import { disputeFacts, disputeLean, latestReview, reasonFamily, reviewCards, waitsOnMerchant } from '../lib/disputes.js'
 
 const NOW = Date.parse('2026-11-10T12:00:00Z')
 const day = offset => new Date(NOW + offset * 86_400_000).toISOString()
@@ -101,32 +101,38 @@ test('a review written before the dispute last changed is stale', () => {
   ]
   assert.equal(latestReview(reviews, 'PP-D-1', day(-1)).headline, 'new')
   assert.equal(latestReview(reviews.slice(0, 1), 'PP-D-1', day(-1)), null)
-  assert.equal(reviewLine(reviews[1]), 'AI: Contest. new')
-  assert.equal(reviewLine(reviews[2]), '')
 })
 
-test('a review card shows the desk\'s checks while pending, and the AI\'s verdict, reasons, steps and reply once written', () => {
+test('the card shows the desk lean while pending, a reviewing state, and the AI verdict in one line with the details behind it', () => {
   const f = disputeFacts(dispute(), { transactions: [sale('TX-1', 0), sale('TX-2', 3)], now: NOW })
   const [pending] = reviewCards([f], [], '')
-  assert.equal(pending.state, 'pending')
-  assert.equal(pending.verdictLabel, 'Review pending')
-  assert.match(pending.headline, /^Desk rules lean: refund\./)
-  assert.match(pending.why, /\*\*What the desk checked\*\*\n- 5 days left to respond/)
-  assert.equal(reviewCards([f], [], 'PP-D-1')[0].verdictLabel, 'Reviewing…')
+  assert.deepEqual([pending.state, pending.verdictLabel, pending.againLabel], ['pending', 'Not reviewed yet', 'Review now'])
+  assert.equal(pending.verdictLine, 'Desk rules lean to "agree to refund": The buyer was charged twice: refund the second charge.')
+  assert.match(pending.checks, /\*\*What the desk checked\*\*\n- 5 days left to respond/)
+  assert.equal(pending.why, '')
+  assert.equal(pending.replyBlock, '')
 
   const review = { disputeId: 'PP-D-1', at: day(0), verdict: 'refund', confidence: 'high', headline: 'The buyer was charged twice',
     reasons: ['TX-1 and TX-2: same buyer, same amount, 3 minutes apart'], steps: ['Refund TX-2'], reply: 'Sorry, we refunded the second charge.' }
+  const [busy] = reviewCards([f], [review], 'PP-D-1')
+  assert.deepEqual([busy.state, busy.verdictLabel, busy.verdictTone, busy.againLabel], ['reviewing', 'Reviewing…', 'info', '⏳ Reviewing…'])
+
   const [done] = reviewCards([f], [review], '')
-  assert.deepEqual([done.state, done.verdictLabel, done.verdictTone, done.confidence], ['reviewed', 'Refund', 'warning', 'High confidence'])
-  assert.equal(done.headline, 'The buyer was charged twice')
+  assert.deepEqual([done.state, done.verdictLabel, done.verdictTone, done.againLabel], ['reviewed', 'Agree to refund', 'warning', 'Review again'])
+  assert.equal(done.verdictLine, 'The buyer was charged twice')
+  assert.equal(done.detailsVerdict, '**Agree to refund** (high confidence): The buyer was charged twice')
   assert.equal(done.why, '**Why**\n- TX-1 and TX-2: same buyer, same amount, 3 minutes apart')
   assert.equal(done.steps, '**Next steps**\n- Refund TX-2')
-  assert.equal(done.reply, 'Sorry, we refunded the second charge.')
   assert.equal(done.replyBlock, '**Reply draft** (paste it in the Resolution Center)\n\nSorry, we refunded the second charge.')
-  assert.equal(pending.replyBlock, '')
-  assert.equal(done.adoptLabel, 'Refund $59.70')
-  assert.match(done.adoptAsk, /refund \$59\.70 to the buyer/)
-  assert.match(done.subject, /^Claim PP-D-1 · \$59\.70$/)
+  assert.match(done.detailsSubtitle, /^Claim PP-D-1 · payment TX-2 · Respond by /)
+  assert.equal(reviewCards([f], [{ ...review, verdict: 'contest' }], '')[0].verdictLabel, 'Contest it')
+  assert.equal(reviewCards([f], [{ ...review, verdict: 'review' }], '')[0].verdictLabel, 'Needs checking')
+})
+
+test('a charge-twice claim whose payment PayPal has not reported yet needs checking, not a contest', () => {
+  const f = disputeFacts(dispute(), { transactions: [], now: NOW })
+  assert.equal(f.paymentSeen, false)
+  assert.equal(f.lean.verdict, 'review')
 })
 
 test('a second card payment of the same order number is a second charge, with no payer email', () => {

@@ -24,9 +24,9 @@
       "launcher": "hidden",
       "app": {
         "seed": "./app",
-        "seedVersion": 13,
+        "seedVersion": 14,
         "data": "data/state.json",
-        "localActions": ["dismiss_finding", "mark_done", "undo_done", "delete_todo"],
+        "localActions": ["dismiss_finding", "mark_done", "undo_done", "delete_todo", "review_dispute", "open_details"],
         "background": {
           "module": "./app-bg.js",
           "agent": true,

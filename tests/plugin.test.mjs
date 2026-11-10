@@ -33,7 +33,7 @@ test('the manifest declares the app, its background module and the inbox folder'
   assert.ok(existsSync(join(root, app.seed, app.data)))
   assert.ok(existsSync(join(root, app.background.module)))
   assert.ok(app.background.fs.read.every(folder => folder.startsWith('~/')))
-  assert.deepEqual(app.localActions, ['dismiss_finding', 'mark_done', 'undo_done', 'delete_todo'])
+  assert.deepEqual(app.localActions, ['dismiss_finding', 'mark_done', 'undo_done', 'delete_todo', 'review_dispute', 'open_details'])
 })
 
 test('the hooks file names a module inside hooks/, and the server is the one the template scopes to', () => {
@@ -720,7 +720,7 @@ test('events carry the emoji and the rule they came from; rule cards are setting
 
 test('a done to-do shows a green check and a menu with Undo and Delete', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
-  assert.match(board, /^todo = Column\(\[todoHead, todoList, doneList, reviewHead, reviewList, alertsHead/m)
+  assert.match(board, /^todo = Column\(\[todoHead, disputeList, todoList, doneList, alertsHead/m)
   assert.match(board, /^doneCard = Card\(doneRow\)$/m, 'the same card as an open to-do')
   assert.match(board, /^doneIcon = Text\("✅"\)$/m)
   assert.match(board, /^doneTitle = Heading\(\$title, 3, \$doneNote\)$/m)
@@ -783,7 +783,7 @@ test('get_dispute is read once per dispute version; the list row stands in when 
   assert.equal(bare.calls.length, 1, 'a missing tool is not tried for every dispute')
 })
 
-test('a sync writes the dispute facts, shows a pending review card, and leads with the review run before an alert analysis', async () => {
+test('a sync writes the dispute facts, starts the review at once, and the dispute card carries the verdict when it ends', async () => {
   const listed = { items: [{ ...raw.disputes.items[0], dispute_id: 'PP-D-7', update_time: day(-1) }] }
   const world = fakeDollar({ answers: { ...toolAnswers, list_disputes: listed, get_dispute: args => ({ dispute_id: args.dispute_id }) } })
   const asked = []
@@ -794,42 +794,62 @@ test('a sync writes the dispute facts, shows a pending review card, and leads wi
   assert.deepEqual(facts.map(f => [f.id, f.family, f.lean.verdict]), [['PP-D-7', 'not_received', 'review']])
   assert.deepEqual(asked.map(a => a.title), ['Review dispute PP-D-7'])
   assert.match(asked[0].prompt, /"disputeId": "PP-D-7"/)
+  assert.match(asked[0].prompt, /What the desk established: \{"id":"PP-D-7"/)
   assert.match(asked[0].prompt, /Change nothing on PayPal/)
-  const card = world.state.value.disputeReviews[0]
-  assert.deepEqual([card.id, card.claim, card.verdictLabel], ['PP-D-7', 'Item not received', 'Reviewing…'])
-  assert.match(world.state.value.summary.reviewsNote, /^1 waiting on you · 0 of 1 reviewed by the AI/)
+  const card = world.state.value.disputeCases[0]
+  assert.deepEqual([card.id, card.title, card.source, card.verdictLabel, card.againLabel], ['dispute:PP-D-7', 'Item not received: $45.00', 'PayPal dispute PP-D-7', 'Reviewing…', '⏳ Reviewing…'])
+  assert.equal(card.detail, 'Payment TX-9 · respond within 2 days')
+  assert.ok(!world.state.value.otherCases.some(c => c.kind === 'dispute'))
 
-  // The agent writes its review; the run ends; the card and the to-do carry the verdict.
   const review = { disputeId: 'PP-D-7', at: new Date(NOW + 60_000).toISOString(), verdict: 'refund', confidence: 'medium', headline: 'No tracking on file', reasons: ['r'], steps: ['s'], reply: 'Hi' }
   world.$.fs.exists = async p => p === REVIEWS_FILE
   world.$.fs.read = async p => (p === REVIEWS_FILE ? JSON.stringify({ reviews: [review] }) : '')
   finish({ ok: true })
   await new Promise(r => setTimeout(r, 0))
   await new Promise(r => setTimeout(r, 0))
-  const after = world.state.value
-  assert.deepEqual([after.disputeReviews[0].verdictLabel, after.disputeReviews[0].headline], ['Refund', 'No tracking on file'])
-  assert.match(after.cases.find(c => c.id === 'dispute:PP-D-7').detail, /^AI: Refund\. No tracking on file\n\n\$45\.00 in dispute/)
-  assert.match(after.summary.reviewsNote, /all reviewed by the AI/)
+  const after = world.state.value.disputeCases[0]
+  assert.deepEqual([after.verdictLabel, after.verdictLine, after.againLabel], ['Agree to refund', 'No tracking on file', 'Review again'])
   assert.deepEqual(world.store[REVIEWS_KEY], { [`PP-D-7@${day(-1)}`]: NOW })
+
+  // Review again runs at once, from the board, with no chat.
+  assert.deepEqual(await handleAction(world.$, { action: 'review_dispute', context: { id: 'PP-D-7' } }), { handled: true })
+  assert.deepEqual(asked.map(a => a.title), ['Review dispute PP-D-7', 'Review dispute PP-D-7'])
+  assert.equal(world.state.value.disputeCases[0].againLabel, '⏳ Reviewing…')
+  assert.deepEqual(await handleAction(world.$, { action: 'open_details', context: { id: 'PP-D-7' } }), { handled: true })
+  finish({ ok: true })
+  await new Promise(r => setTimeout(r, 0))
+  await new Promise(r => setTimeout(r, 0))
+  assert.equal(world.state.value.disputeCases[0].againLabel, 'Review again')
 })
 
-test('a reviewed dispute is not reviewed again; one run at a time across reviews and analyses', async () => {
+test('a reviewed dispute is not reviewed again by itself; one run at a time across reviews and analyses', async () => {
   const world = fakeDollar({ answers: toolAnswers })
   const facts = [{ id: 'PP-D-1', updated: day(-1), daysLeft: 2, claim: 'c', amount: '$1.00', respondBy: day(2) }]
-  world.$.app.analyze = () => new Promise(() => {})
+  const asked = []
+  const finishers = []
+  world.$.app.analyze = req => { asked.push(req.title); return new Promise(r => { finishers.push(r) }) }
   assert.equal(await startReview(world.$, facts, [{ disputeId: 'PP-D-1', at: day(0), verdict: 'contest' }], NOW, () => {}), null)
-  assert.ok(await startReview(world.$, facts, [], NOW, () => {}))
+  const first = await startReview(world.$, facts, [], NOW, () => {})
+  assert.ok(first)
   assert.equal(await startReview(world.$, [{ ...facts[0], id: 'PP-D-9' }], [], NOW, () => {}), null, 'a review is running')
   assert.equal(await startAnalysis(world.$, [trippedRow('a')], NOW, () => {}), null, 'no analysis while a review runs')
+  finishers[0]({ ok: true })
+  await first.run
+  assert.deepEqual(asked, ['Review dispute PP-D-1'])
 })
 
-test('the Dispute review grid binds only fields a review card has, and its buttons draft into the chat box', async () => {
+test('the dispute card binds only fields a dispute to-do has, and its buttons act on the board, not the chat', async () => {
   const { reviewCards } = await import('../lib/disputes.js')
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
-  assert.match(board, /^reviewList = Grid\(_template\(\$\/data\/disputeReviews, reviewCard\), minWidth=440\)$/m)
+  assert.match(board, /^disputeList = Column\(_template\(\$\/data\/disputeCases, disputeCard\)\)$/m)
+  assert.match(board, /^disputeDetails = Modal\(disputeDetailsButton, disputeView\)$/m)
   const [card] = reviewCards([{ id: 'X', updated: '', daysLeft: 3, respondBy: day(3), stage: 'CLAIM', claim: 'c', amount: '$1.00', order: null, checks: [], lean: { verdict: 'refund', because: 'b' }, buyerSays: '' }], [], '')
-  const lines = board.split('\n').filter(line => /^review[A-Z]\w* = /.test(line))
+  const todo = { ...card, id: 'dispute:X', kind: 'dispute', title: 't', source: 's', detail: 'd', icon: '🔔', label: 'Dispute', tone: 'warning', ref: 'X' }
+  const lines = board.split('\n').filter(line => /^dispute[A-Z]\w* = /.test(line))
   const fields = new Set(lines.flatMap(line => [...line.matchAll(/\$([a-zA-Z]\w*)/g)].map(m => m[1])))
-  for (const field of fields) assert.ok(field in card, `the card has no ${field}`)
-  for (const line of lines.filter(l => l.includes('Event('))) assert.match(line, /Event\("compose", \{text: \$\w+\}\)/, line)
+  for (const field of fields) assert.ok(field in todo, `the card has no ${field}`)
+  assert.ok(!lines.some(l => l.includes('"compose"')), 'no button drafts into the chat box')
+  const actions = new Set(lines.flatMap(l => [...l.matchAll(/Event\("(\w+)"/g)].map(m => m[1])))
+  const local = readJson('.claude-plugin/plugin.json').templates.board.app.localActions
+  for (const action of actions) assert.ok(local.includes(action), `${action} is handled on the board`)
 })

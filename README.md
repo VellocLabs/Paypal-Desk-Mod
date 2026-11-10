@@ -68,12 +68,11 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   behind the payment, a second charge, a refund already made, the
   product's refund rate against the store's, the buyer's history and seller
   protection, and what its rules lean to. Then the AI reviews it in the
-  background, with `get_dispute` and the `paypal-rules` skill, and writes a
-  verdict on the dispute's card: *Refund*, *Contest* or *Your call*, why,
-  what was checked, the next steps and a reply draft for the Resolution
-  Center. The primary button drafts "go with your review" into the chat;
-  nothing changes on PayPal until you confirm. It never accepts a claim on
-  its own.
+  background, with the `paypal-rules` skill, and the dispute's card says
+  the verdict in one line: *Agree to refund*, *Contest it* or *Needs
+  checking*, with its reason. *Details ›* opens why, the next steps, what
+  was checked and a reply draft for the Resolution Center; *Review again*
+  reruns it on the spot. It never changes anything on PayPal on its own.
 - **Confirmation** (`hooks/guard.js`): a PayPal tool that creates, sends,
   refunds, cancels or accepts anything opens a confirmation dialog, whatever
   the session's permission mode. Reads pass.
@@ -202,12 +201,11 @@ few hours, so seed early.
 
 - Open the desk. *Overview* shows the week's sales; *Actions* lists the
   overdue invoices and the dispute.
-- Under *Dispute review*, the dispute's card shows the desk's checks at
-  once and the AI's verdict a minute or two later. Press its primary button
-  (*Refund $…* or *Prepare the answer*) and send the drafted request.
-- Press *Ask AI* on the dispute and send the drafted question. The agent reads it with
-  `get_dispute`, explains it, recommends, and calls a tool. The confirmation
-  dialog names the call; allow or refuse there.
+- Each dispute's card on *Actions* shows the desk's lean at once and the
+  AI's verdict a minute or two later; *Details ›* shows the whole review.
+- Press *Ask AI* on an overdue invoice and send the drafted question. The
+  agent explains it, recommends, and calls a tool. The confirmation dialog
+  names the call; allow or refuse there.
 - Drop `inbox-example.csv` into `~/Documents/paypal-desk/inbox`. Within five
   minutes a case appears; the agent drafts the invoice from it.
 - Ask "show me refunds as a bar chart by week" and watch the dashboard
