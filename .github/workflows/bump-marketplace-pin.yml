@@ -1,0 +1,67 @@
+# Copy to .github/workflows/ in a repository sources.json names.
+#
+# Every push to main opens (or moves) one pull request on the marketplace
+# that pins sources.json to the pushed commit; merging it is the release.
+# Needs the repository variable MARKETPLACE_REPO (the marketplace's
+# owner/name) and the secret MARKETPLACE_TOKEN: a fine-grained token on it
+# with Contents and Pull requests read/write (a token, not GITHUB_TOKEN, so
+# the pull request runs CI). Without either, every step is skipped.
+
+name: Bump the marketplace pin
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bump-marketplace-pin
+  cancel-in-progress: true
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    env:
+      MARKETPLACE: ${{ vars.MARKETPLACE_REPO }}
+      GH_TOKEN: ${{ secrets.MARKETPLACE_TOKEN }}
+      ENABLED: ${{ secrets.MARKETPLACE_TOKEN != '' && vars.MARKETPLACE_REPO != '' }}
+    steps:
+      - if: env.ENABLED != 'true'
+        run: echo "::notice::MARKETPLACE_REPO or MARKETPLACE_TOKEN is not set; the marketplace pin is not bumped"
+      - if: env.ENABLED == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.MARKETPLACE }}
+          token: ${{ secrets.MARKETPLACE_TOKEN }}
+      - if: env.ENABLED == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Pin sources.json to this commit
+        if: env.ENABLED == 'true'
+        run: node scripts/bump_source.mjs --if-listed "$GITHUB_REPOSITORY" "$GITHUB_SHA"
+      - name: Open or move the pull request
+        if: env.ENABLED == 'true'
+        run: |
+          if git diff --quiet; then
+            echo "the pin is already at $GITHUB_SHA"
+            exit 0
+          fi
+          branch="sources/${GITHUB_REPOSITORY//\//-}"
+          title="Sources: $GITHUB_REPOSITORY at ${GITHUB_SHA::7}"
+          body="Pins \`$GITHUB_REPOSITORY\` to $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA.
+
+          A client upgrades an installed plugin only when its \`plugin.json\` \`version\` is higher; check that every changed plugin bumped it."
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git commit -am "$title"
+          git push --force origin "$branch"
+          if gh pr view "$branch" --repo "$MARKETPLACE" --json state -q .state 2>/dev/null | grep -qx OPEN; then
+            gh pr edit "$branch" --repo "$MARKETPLACE" --title "$title" --body "$body"
+          else
+            gh pr create --repo "$MARKETPLACE" --base main --head "$branch" --title "$title" --body "$body"
+          fi
