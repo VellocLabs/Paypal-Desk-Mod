@@ -136,3 +136,13 @@ test('a second card payment of the same order number is a second charge, with no
   assert.equal(disputeFacts(dispute({ value: '38.00' }), { transactions: [a, b], now: NOW }).secondCharge, 'TX-1')
   assert.equal(disputeFacts(dispute({ value: '38.00' }), { transactions: [other, b], now: NOW }).secondCharge, '')
 })
+
+test('a flat MCP list row reads like the REST dispute: amount, dates and the disputed transaction', () => {
+  const row = { dispute_id: 'PP-R-CIS-1', reason: 'DUPLICATE_TRANSACTION', status: 'WAITING_FOR_SELLER_RESPONSE',
+    dispute_life_cycle_stage: 'CHARGEBACK', dispute_channel: 'INTERNAL', amount: '69.00', currency_code: 'USD',
+    created_date: day(-1), updated_date: day(-0.5), disputed_transaction_id: '6AA3' }
+  const f = disputeFacts(row, { transactions: [{ ...sale('6AA3', 3, 69), number: 'PD-1' }, { ...sale('2E17', 1, 69), number: 'PD-1' }], now: NOW })
+  assert.deepEqual([f.amount, f.value, f.transactionId, f.created, f.updated, f.channel], ['$69.00', 69, '6AA3', day(-1), day(-0.5), 'INTERNAL'])
+  assert.equal(f.secondCharge, '2E17')
+  assert.equal(f.lean.verdict, 'refund')
+})

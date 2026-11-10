@@ -111,7 +111,11 @@ confirm anything: read, write the review, change nothing on PayPal.
    keeping the reviews there. The card changes within seconds.
 
 Every reason is a fact from the entry, the dispute or a tool answer, with
-its figure or id. The reply draft is what the merchant pastes in PayPal's
+its figure or id. Read the stage with the channel: `INTERNAL` means the
+buyer filed with PayPal, even at stage `CHARGEBACK` (PayPal's claim stage);
+only `EXTERNAL` is a card issuer's chargeback with its fee. A payment
+missing from `list_transactions` is usually not there yet (it lags hours),
+not proof of anything: say so. The reply draft is what the merchant pastes in PayPal's
 Resolution Center: two to four plain sentences to the buyer, or to PayPal
 for a contest, naming the evidence attached.
 

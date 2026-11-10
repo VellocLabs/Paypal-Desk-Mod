@@ -16,7 +16,7 @@
 import { addDays, dateOf, shortDate } from './lib/dates.js'
 import { DEFAULT_RULES, checkRules, disputeAlerts } from './lib/alerts.js'
 import { refundBreakdown } from './lib/insights.js'
-import { disputeFacts, latestReview, reviewCards, reviewLine, waitsOnMerchant } from './lib/disputes.js'
+import { disputeFacts, flatDispute, latestReview, reviewCards, reviewLine, waitsOnMerchant } from './lib/disputes.js'
 import { invoiceRowFields, paymentOrders, readStoreRow, salesBoard } from './lib/sales.js'
 
 export const POLL_MS = 5 * 60_000
@@ -283,7 +283,7 @@ async function writeDisputes($, facts) {
  * when the server offers no `get_dispute` or the read fails.
  */
 export async function disputeDetails($, listed, unavailable = []) {
-  const rows = listItems(listed, ['items', 'disputes']).filter(d => (d.dispute_id || d.id) && waitsOnMerchant(d))
+  const rows = listItems(listed, ['items', 'disputes']).map(flatDispute).filter(d => (d.dispute_id || d.id) && waitsOnMerchant(d))
   const stored = (await $.store.get(DETAILS_KEY)) || {}
   const kept = {}
   let missing = unavailable.includes('get_dispute')
@@ -974,7 +974,7 @@ export function normalizeInvoices(value, now) {
 }
 
 export function normalizeDisputes(value) {
-  const items = listItems(value, ['items', 'disputes'])
+  const items = listItems(value, ['items', 'disputes']).map(flatDispute)
   return items.map(d => {
     const status = String(d.status || '').toUpperCase()
     const open = status !== 'RESOLVED' && status !== 'CLOSED' && status !== 'CANCELLED'
