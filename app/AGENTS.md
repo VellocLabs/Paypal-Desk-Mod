@@ -80,15 +80,18 @@ Speak of them as orders and sales, not as invoices.
 
 ## Disputes
 
-Each open dispute that waits on the merchant is a card at the top of the
-*Actions* tab: what the buyer claims and the amount, then one line with
-your verdict as a badge (**Agree to refund**, **Contest it** or **Needs
-checking**) and your review's `headline` after it, then the payment and
-the deadline. *Details ›* opens the whole review: the verdict with its
-confidence, what the buyer says, why, the next steps, what the desk
-checked and the reply draft. *Review again* starts a new review run at
-once (⏳ while it runs, or while it waits for another run). Until you have
-written a review the line shows the lean of the desk's rules.
+Each open dispute that waits on the merchant is a two-line card under the
+*Disputes* heading at the top of the *Actions* tab; the heading counts the
+cards, the money at stake and the verdicts. Line one is the claim, the
+amount and the deadline. Line two is your verdict as a badge (**Agree to
+refund**, **Contest it** or **Needs checking**) with your review's
+`headline` after it, so keep the headline to the deciding fact: at most 15
+words, and do not repeat the amount, the claim or the verdict. *Details*
+opens the whole review: the verdict with its confidence, why, the next
+steps, what the buyer says, the reply draft and what the desk checked.
+*Review again* starts a new review run at once (⏳ while it runs, or while
+it waits for another run). Until you have written a review the second
+line shows the lean of the desk's rules.
 
 **When.** The module starts an agent run in this folder for each such
 dispute with no review for its current version (the dispute's
@@ -367,7 +370,8 @@ missing.
 | `alerts` | Your rules as checked: `{id, name, rule, condition, headline, summary, subject, value, delta, trend, better, reading, week, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
 | `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
-| `disputeCases`, `otherCases` | `cases` split for the board: the dispute cards first, then the rest. A dispute case adds its review: `{reviewState, verdictLabel, verdictTone, verdictLine, againLabel, detailsTitle, detailsSubtitle, detailsVerdict, buyerSays, why, steps, checks, replyBlock, reviewedAt}`; `reviewState` is `pending`, `reviewing` or `reviewed`; the details fields are Markdown |
+| `disputeCases`, `otherCases` | `cases` split for the board: the dispute cards first, then the rest. A dispute case adds its review: `{reviewState, verdict, verdictLabel, verdictTone, verdictLine, againLabel, detailsTitle, detailsSubtitle, detailsLabel, detailsTone, detailsNote, detailsBody}`; `reviewState` is `pending`, `reviewing` or `reviewed`; `detailsBody` is Markdown |
+| `groups` | The headings over the two groups of to-dos: `{disputesTitle, disputesNote, otherTitle}`; a title is empty when its heading is not shown |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it), and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
 | `doneCases` | The done list, latest first: the open card's fields plus `doneNote` ("Alert rule: Refund rate jump · Done Nov 9") and `doneLabel` ("✓ Done Nov 9") |

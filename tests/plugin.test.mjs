@@ -720,7 +720,7 @@ test('events carry the emoji and the rule they came from; rule cards are setting
 
 test('a done to-do shows a green check and a menu with Undo and Delete', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
-  assert.match(board, /^todo = Column\(\[todoHead, disputeList, todoList, doneList, alertsHead/m)
+  assert.match(board, /^todo = Column\(\[todoHead, disputeHead, disputeList, otherHead, todoList, doneList, alertsHead/m)
   assert.match(board, /^doneCard = Card\(doneRow\)$/m, 'the same card as an open to-do')
   assert.match(board, /^doneIcon = Text\("✅"\)$/m)
   assert.match(board, /^doneTitle = Heading\(\$title, 3, \$doneNote\)$/m)
@@ -797,7 +797,8 @@ test('a sync writes the dispute facts, starts the review at once, and the disput
   assert.match(asked[0].prompt, /What the desk established: \{"id":"PP-D-7"/)
   assert.match(asked[0].prompt, /Change nothing on PayPal/)
   const card = world.state.value.disputeCases[0]
-  assert.deepEqual([card.id, card.title, card.source, card.verdictLabel, card.againLabel], ['dispute:PP-D-7', 'Item not received: $45.00', 'PayPal dispute PP-D-7', 'Reviewing…', '⏳ Reviewing…'])
+  assert.deepEqual([card.id, card.title, card.source, card.verdictLabel, card.againLabel], ['dispute:PP-D-7', 'Item not received · $45.00 · respond within 2 days', 'PayPal dispute PP-D-7', 'Reviewing…', '⏳ Reviewing…'])
+  assert.deepEqual(world.state.value.groups, { disputesTitle: 'Disputes', disputesNote: '1 waiting on you · $45.00 at stake · 1 not reviewed yet', otherTitle: 'Other to-dos' })
   assert.equal(card.detail, 'Payment TX-9 · respond within 2 days')
   assert.ok(!world.state.value.otherCases.some(c => c.kind === 'dispute'))
 

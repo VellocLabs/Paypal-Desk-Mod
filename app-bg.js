@@ -16,7 +16,7 @@
 import { addDays, dateOf, shortDate } from './lib/dates.js'
 import { DEFAULT_RULES, checkRules, disputeAlerts } from './lib/alerts.js'
 import { refundBreakdown } from './lib/insights.js'
-import { disputeFacts, flatDispute, latestReview, reviewCards, waitsOnMerchant } from './lib/disputes.js'
+import { disputeFacts, disputesNote, flatDispute, latestReview, reviewCards, waitsOnMerchant } from './lib/disputes.js'
 import { invoiceRowFields, paymentOrders, readStoreRow, salesBoard } from './lib/sales.js'
 
 export const POLL_MS = 5 * 60_000
@@ -370,7 +370,7 @@ export function reviewPrompt(f) {
     `Dispute ${f.id} (${f.claim}, ${f.amount}) waits on the merchant${f.respondBy ? `, who must respond by ${f.respondBy.slice(0, 10)}` : ''}.`,
     `What the desk established: ${JSON.stringify(facts)}.`,
     'Review it as the Disputes section of AGENTS.md says: read it with get_dispute if this connection has it, look for the payment and a second one with list_transactions when that matters, and apply the paypal-rules skill.',
-    `Then add one review to data/reviews.json with "disputeId": "${f.id}", keeping the reviews already there. Its headline is the one sentence the card shows: the verdict's reason, at most 15 words.`,
+    `Then add one review to data/reviews.json with "disputeId": "${f.id}", keeping the reviews already there. Its headline is the one sentence the card shows after the verdict badge: the deciding fact, at most 15 words, without repeating the amount, the claim or the verdict.`,
     'Change nothing on PayPal. End with the verdict and its headline.',
   ].join(' ')
 }
@@ -404,13 +404,14 @@ function withReview(c, facts, reviews) {
   if (!f) return c
   const { id: _id, state: reviewState, ...card } = reviewCards([f], reviews, reviewing || '')[0]
   const waiting = queued.includes(f.id)
-  const due = f.daysLeft === null ? 'no response date given' : f.daysLeft <= 0 ? 'response overdue' : `respond within ${f.daysLeft} day${f.daysLeft === 1 ? '' : 's'}`
+  const due = f.daysLeft === null ? '' : f.daysLeft <= 0 ? 'response overdue' : `respond within ${f.daysLeft} day${f.daysLeft === 1 ? '' : 's'}`
   return {
     ...c,
     ...card,
-    title: `${f.claim}: ${f.amount}`,
+    title: [f.claim, f.amount, due].filter(Boolean).join(' · '),
     source: `PayPal dispute ${f.id}`,
-    detail: [f.transactionId && `Payment ${f.transactionId}`, f.order && `order ${f.order.number}`, due].filter(Boolean).join(' · '),
+    detail: [f.transactionId && `Payment ${f.transactionId}`, f.order && `order ${f.order.number}`, due || 'no response date given'].filter(Boolean).join(' · '),
+    value: f.value,
     reviewState,
     againLabel: waiting ? '⏳ Queued…' : card.againLabel,
   }
@@ -812,10 +813,17 @@ export function openTodos(cases, handled, today) {
 /** The to-do list and its first few. */
 /** The to-do list, split for the board: dispute cards (with their review) first, then the rest. */
 function todoView(cases) {
+  const disputeCases = cases.filter(c => c.kind === 'dispute')
+  const otherCases = cases.filter(c => c.kind !== 'dispute')
   return {
     cases,
-    disputeCases: cases.filter(c => c.kind === 'dispute'),
-    otherCases: cases.filter(c => c.kind !== 'dispute'),
+    disputeCases,
+    otherCases,
+    groups: {
+      disputesTitle: disputeCases.length ? 'Disputes' : '',
+      disputesNote: disputesNote(disputeCases),
+      otherTitle: disputeCases.length && otherCases.length ? 'Other to-dos' : '',
+    },
     needs: cases.slice(0, NEEDS_SHOWN),
   }
 }

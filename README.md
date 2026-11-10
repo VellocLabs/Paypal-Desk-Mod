@@ -70,7 +70,7 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   protection, and what its rules lean to. Then the AI reviews it in the
   background, with the `paypal-rules` skill, and the dispute's card says
   the verdict in one line: *Agree to refund*, *Contest it* or *Needs
-  checking*, with its reason. *Details ›* opens why, the next steps, what
+  checking*, with its reason. *Details* opens why, the next steps, what
   was checked and a reply draft for the Resolution Center; *Review again*
   reruns it on the spot. It never changes anything on PayPal on its own.
 - **Confirmation** (`hooks/guard.js`): a PayPal tool that creates, sends,
@@ -202,7 +202,7 @@ few hours, so seed early.
 - Open the desk. *Overview* shows the week's sales; *Actions* lists the
   overdue invoices and the dispute.
 - Each dispute's card on *Actions* shows the desk's lean at once and the
-  AI's verdict a minute or two later; *Details ›* shows the whole review.
+  AI's verdict a minute or two later; *Details* shows the whole review.
 - Press *Ask AI* on an overdue invoice and send the drafted question. The
   agent explains it, recommends, and calls a tool. The confirmation dialog
   names the call; allow or refuse there.
