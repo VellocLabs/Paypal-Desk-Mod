@@ -128,3 +128,11 @@ test('a review card shows the desk\'s checks while pending, and the AI\'s verdic
   assert.match(done.adoptAsk, /refund \$59\.70 to the buyer/)
   assert.match(done.subject, /^Claim PP-D-1 · \$59\.70$/)
 })
+
+test('a second card payment of the same order number is a second charge, with no payer email', () => {
+  const a = { ...sale('TX-1', 0, 38, ''), number: 'PD-20261109-907' }
+  const b = { ...sale('TX-2', 1, 38, ''), number: 'PD-20261109-907' }
+  const other = { ...sale('TX-3', 2, 38, ''), number: 'PD-20261109-908' }
+  assert.equal(disputeFacts(dispute({ value: '38.00' }), { transactions: [a, b], now: NOW }).secondCharge, 'TX-1')
+  assert.equal(disputeFacts(dispute({ value: '38.00' }), { transactions: [other, b], now: NOW }).secondCharge, '')
+})

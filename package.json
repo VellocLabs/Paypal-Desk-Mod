@@ -11,6 +11,7 @@
     "seed": "node scripts/seed-sandbox.mjs",
     "seed:orders": "node scripts/seed-orders.mjs",
     "seed:payments": "node scripts/seed-payments.mjs",
+    "seed:disputes": "node scripts/seed-disputes.mjs",
     "undo-refunds": "node scripts/undo-refunds.mjs"
   }
 }

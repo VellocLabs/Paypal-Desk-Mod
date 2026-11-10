@@ -143,6 +143,20 @@ PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:payments
 PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:payments -- --check
 ```
 
+### Test disputes
+
+One dispute for each case the dispute review decides differently: an
+order paid twice, a small and a large item-not-received, an item not as
+described, an unauthorized payment. Each is a store order paid with the
+sandbox test card, then a chargeback on its capture through the
+sandbox-only endpoint. `--dry-run` prints the orders and the expected
+verdicts; a second run skips what is done.
+
+```bash
+PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:disputes -- --dry-run
+PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:disputes
+```
+
 ### Known PayPal issues
 
 **Refunded invoices empty the list.**

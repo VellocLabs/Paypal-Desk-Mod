@@ -1008,6 +1008,7 @@ export function normalizeTransactions(value) {
       status: String(info.transaction_status || '').toUpperCase(),
       refund: code.startsWith('T11') || Number(amount.value || 0) < 0 && /refund/i.test(info.transaction_subject || ''),
       payer: payer.email_address || (payer.payer_name && payer.payer_name.alternate_full_name) || '',
+      number: String(info.invoice_id || info.custom_field || ''),
     }
   })
 }
