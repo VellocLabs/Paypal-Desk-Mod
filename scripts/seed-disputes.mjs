@@ -27,6 +27,8 @@ const args = process.argv.slice(2)
 const dryRun = args.includes('--dry-run')
 /** Pay from the buyer's PayPal account (approved by link) instead of the test card: the chargeback endpoint refuses card captures. */
 const wallet = args.includes('--wallet')
+/** Take the payments only; the buyer opens each dispute in the sandbox Resolution Center. */
+const noChargeback = args.includes('--no-chargeback')
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : ''
 const today = dateOf(Date.now())
 
@@ -35,11 +37,11 @@ const today = dateOf(Date.now())
  * chargeback reason the sandbox endpoint takes; `pick` chooses the order.
  */
 const CASES = [
-  { key: 'duplicate', reason: 'DUPLICATE', expect: 'refund: the order was paid twice', twice: true, pick: o => o.totalCents >= 3000 && o.totalCents <= 9000 },
-  { key: 'small-not-received', reason: 'INR', expect: 'refund: no tracking, and under $25', pick: o => o.totalCents <= 2500 },
-  { key: 'large-not-received', reason: 'INR', expect: 'your call: contest only with tracking', pick: o => o.totalCents >= 12000 },
-  { key: 'not-as-described', reason: 'SNAD', expect: 'refund if the earbuds are refunded far above the store, else your call', pick: o => o.lines.some(l => l.sku === 'AUD-BUDS') && o.totalCents > 2500 },
-  { key: 'unauthorized', reason: 'UNAUTH', expect: 'your call: no seller protection or history on a card payment', pick: o => o.totalCents > 2500 && o.totalCents < 12000 },
+  { key: 'duplicate', report: 'I was charged twice',  reason: 'DUPLICATE', expect: 'refund: the order was paid twice', twice: true, pick: o => o.totalCents >= 3000 && o.totalCents <= 9000 },
+  { key: 'small-not-received', report: "I didn't receive it",  reason: 'INR', expect: 'refund: no tracking, and under $25', pick: o => o.totalCents <= 2500 },
+  { key: 'large-not-received', report: "I didn't receive it",  reason: 'INR', expect: 'your call: contest only with tracking', pick: o => o.totalCents >= 12000 },
+  { key: 'not-as-described', report: "It's not as described",  reason: 'SNAD', expect: 'refund if the earbuds are refunded far above the store, else your call', pick: o => o.lines.some(l => l.sku === 'AUD-BUDS') && o.totalCents > 2500 },
+  { key: 'unauthorized', report: "I didn't authorize it",  reason: 'UNAUTH', expect: 'your call: no seller protection or history on a card payment', pick: o => o.totalCents > 2500 && o.totalCents < 12000 },
 ]
 
 const journal = existsSync(journalPath) ? JSON.parse(readFileSync(journalPath, 'utf8')) : {}
@@ -69,6 +71,7 @@ const client = createClient({ clientId, clientSecret, rpm: 30 })
 
 let failed = 0
 const waiting = []
+const manual = []
 for (const c of plan.filter(p => !p.done)) {
   const entry = journal[c.key] ?? (journal[c.key] = { number: c.number })
   try {
@@ -89,6 +92,7 @@ for (const c of plan.filter(p => !p.done)) {
     }
     save()
     const target = c.twice ? entry.secondCaptureId : entry.captureId
+    if (noChargeback) { manual.push(`${c.key}: ${c.number}, $${(c.order.totalCents / 100).toFixed(2)}${c.twice ? ' (the second of the two payments)' : ''} → report: ${c.report}`); continue }
     const answer = await client.request('POST', '/v2/customer-support/process-chargeback', {
       transaction: { id_enc: target },
       reason: c.reason,
@@ -105,6 +109,11 @@ for (const c of plan.filter(p => !p.done)) {
   }
 }
 
+if (manual.length) {
+  console.log('\nOpen each dispute as the buyer: sign in to https://www.sandbox.paypal.com with the sandbox personal')
+  console.log('account, open the payment under Activity, choose Report a problem, and pick the reason given:')
+  for (const line of manual) console.log(`  ${line}`)
+}
 if (waiting.length) {
   console.log('\nApprove each payment as the sandbox *personal* (buyer) account, then run the same command again:')
   for (const line of waiting) console.log(`  ${line}`)
