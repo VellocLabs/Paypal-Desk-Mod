@@ -1052,6 +1052,12 @@ export function normalizeDisputes(value) {
   })
 }
 
+/** A card or wallet payment names its store order in the subject ("Order PD-20261109-909"); a payment of one order twice keeps the subject but not the invoice id. */
+export function orderInSubject(subject) {
+  const m = /\bPD-\d{8}-\d{3}\b/.exec(String(subject || ''))
+  return m ? m[0] : ''
+}
+
 export function normalizeTransactions(value) {
   const items = listItems(value, ['transaction_details', 'transactions', 'items'])
   return items.map(t => {
@@ -1067,7 +1073,9 @@ export function normalizeTransactions(value) {
       status: String(info.transaction_status || '').toUpperCase(),
       refund: code.startsWith('T11') || Number(amount.value || 0) < 0 && /refund/i.test(info.transaction_subject || ''),
       payer: payer.email_address || (payer.payer_name && payer.payer_name.alternate_full_name) || '',
-      number: String(info.invoice_id || info.custom_field || ''),
+      number: String(info.invoice_id || info.custom_field || orderInSubject(info.transaction_subject) || ''),
+      reference: String(info.paypal_reference_id || ''),
+      subject: String(info.transaction_subject || ''),
     }
   })
 }

@@ -164,3 +164,13 @@ test('a flat MCP list row reads like the REST dispute: amount, dates and the dis
   assert.equal(f.secondCharge, '2E17')
   assert.equal(f.lean.verdict, 'refund')
 })
+
+test('a dispute that names a payment\'s parent reference still finds it, and the second charge, from the order in the subject', () => {
+  const row = (id, at, value, reference = '') => ({ id, at, value, currency: 'USD', status: 'S', refund: false, payer: '', number: 'PD-20261109-909', reference })
+  const transactions = [row('2E1742633M942661H', '2026-11-10T03:01:48Z', 69, '9AY43030G3310691L'), row('1S094158DA563235F', '2026-11-10T03:01:52Z', 69, '6AA340678K0857724')]
+  const f = disputeFacts(dispute({ value: '69.00', tx: '6AA340678K0857724' }), { transactions, now: NOW })
+  assert.equal(f.payment.id, '1S094158DA563235F', 'the dispute names the parent reference, not the transaction id')
+  assert.equal(f.secondCharge, '2E1742633M942661H')
+  assert.equal(f.lean.verdict, 'refund')
+  assert.ok(f.checks.some(c => c.text === 'Payment 1S094158DA563235F ($69.00) found, with no store order behind it'))
+})
