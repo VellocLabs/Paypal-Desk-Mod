@@ -21,7 +21,7 @@
  * default seeds the newest day first), --dry-run (print the
  * plan and one request body, call nothing).
  */
-import './lib/env.mjs'
+import { credentialProblem } from './lib/env.mjs'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -64,7 +64,7 @@ if (args['dry-run']) {
 
 const clientId = process.env.PAYPAL_CLIENT_ID
 const clientSecret = process.env.PAYPAL_CLIENT_SECRET
-if (!clientId || !clientSecret) fail('Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET (a sandbox REST app) first.')
+if (credentialProblem()) fail(credentialProblem())
 
 const client = createClient({ clientId, clientSecret, rpm })
 const journal = existsSync(journalPath) ? JSON.parse(readFileSync(journalPath, 'utf8')) : {}

@@ -11,13 +11,13 @@
  *   node scripts/seed-sandbox.mjs --chargeback <SELLER_TRANSACTION_ID>
  */
 
-import './lib/env.mjs'
+import { credentialProblem } from './lib/env.mjs'
 
 const HOST = 'https://api-m.sandbox.paypal.com'
 const clientId = process.env.PAYPAL_CLIENT_ID
 const clientSecret = process.env.PAYPAL_CLIENT_SECRET
-if (!clientId || !clientSecret) {
-  console.error('Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET (a sandbox REST app) first.')
+if (credentialProblem()) {
+  console.error(credentialProblem())
   process.exit(2)
 }
 

@@ -13,7 +13,7 @@
  *   node scripts/seed-disputes.mjs --only duplicate
  *   node scripts/seed-disputes.mjs --wallet     (buyer approves each payment by link)
  */
-import './lib/env.mjs'
+import { credentialProblem } from './lib/env.mjs'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -64,8 +64,8 @@ if (dryRun) process.exit(0)
 
 const clientId = process.env.PAYPAL_CLIENT_ID
 const clientSecret = process.env.PAYPAL_CLIENT_SECRET
-if (!clientId || !clientSecret) {
-  console.error('Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET (a sandbox REST app) first.')
+if (credentialProblem()) {
+  console.error(credentialProblem())
   process.exit(2)
 }
 const client = createClient({ clientId, clientSecret, rpm: 30 })

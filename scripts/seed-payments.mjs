@@ -16,7 +16,7 @@
  * Options: --orders N (take only the first N of today's orders), --workers N
  * (default 4), --rpm N (default 120), --check.
  */
-import './lib/env.mjs'
+import { credentialProblem } from './lib/env.mjs'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -57,7 +57,7 @@ if (args['dry-run']) {
 
 const clientId = process.env.PAYPAL_CLIENT_ID
 const clientSecret = process.env.PAYPAL_CLIENT_SECRET
-if (!clientId || !clientSecret) fail('Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET (a sandbox REST app) first.')
+if (credentialProblem()) fail(credentialProblem())
 const client = createClient({ clientId, clientSecret, rpm })
 
 if (args.check) {
