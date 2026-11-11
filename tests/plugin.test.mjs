@@ -12,7 +12,7 @@ import { describeCall, isWriteTool, register as registerGuard } from '../hooks/g
 import {
   DONE_DAYS, doneTodos, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
-  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, WATCH_FILE, alertTodos, disputeDetails, readWatch, ruleCards, startReview, refreshReviews, todoView, showBadge,
+  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, WATCH_FILE, actOf, alertTodos, disputeDetails, readWatch, ruleCards, startReview, refreshReviews, todoView, showBadge,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
 import { DEFAULT_RULES } from '../lib/alerts.js'
@@ -499,7 +499,7 @@ test('the home view: the top cases, alerts with their analysis status, and findi
   assert.equal(state.needs.length, 3)
   assert.deepEqual(state.needs, state.cases.slice(0, 3))
   assert.deepEqual(state.alerts.map(a => [a.id, a.status, a.tone, a.analysis]), [['refund-watch', 'Triggered', 'warning', 'analyzed'], ['ceiling', 'OK', 'success', '']])
-  assert.equal(state.alerts[0].note, 'AI: 65W charger: bad batch. Refunds since Nov 2 are chargers that stop charging.')
+  assert.match(state.alerts[0].note, /^AI: 65W charger: bad batch/)
   assert.deepEqual([state.alerts[0].rule, state.alerts[0].subject, state.alerts[0].value, state.alerts[0].better], ['Store: refund rate up more than 1.5 pts', 'Last 7 days', '30.0%', 'down'])
   assert.equal(state.alerts[0].summary, 'Store: refund rate up more than 1.5 pts')
   assert.equal(state.alerts[1].note, '')
@@ -608,7 +608,8 @@ test('after a run the board shows the new finding and the alert as analyzed', as
   assert.deepEqual([world.state.value.alerts[0].status, world.state.value.alerts[0].analysis], ['Triggered', 'analyzed'])
   assert.deepEqual(world.state.value.findings.map(f => [f.id, f.source]), [['f-1', 'Automatic analysis']])
   assert.deepEqual(world.state.value.cases.map(c => c.id), ['invoice:INV2-A', 'alert:a'])
-  assert.equal(world.state.value.cases[1].detail, 'AI: Charger batch. c', "the alert's to-do carries the conclusion")
+  assert.equal(world.state.value.cases[1].detail, 'AI: Charger batch', "the alert's to-do carries the finding, one line")
+  assert.equal(world.state.value.cases[1].detailsConclusion, 'c', 'the argument stays in Details')
   assert.deepEqual(world.state.value.summary, {
     disputesNote: 'x', casesNote: '2 open, most urgent first', todoCount: 2, openTab: 2, findingsNote: 'Newest first', alertsNote: 'The desk checks these every 5 minutes · 1 met now',
   })
@@ -637,7 +638,7 @@ test('a tripped alert is a to-do with the analysis in it; with no rule there is 
   assert.equal(todo.id, 'alert:refund-watch')
   assert.equal(todo.title, 'Refund rate rose to 30.0% (+30.0 pts)', 'an event says what happened, with the figure')
   assert.equal(todo.source, 'Alert rule: Refund rate watch')
-  assert.match(todo.detail, /^AI: 65W charger: bad batch\. Chargers stop charging\.$/)
+  assert.equal(todo.detail, 'AI: 65W charger: bad batch')
   assert.match(todo.ask, /^The alert "Refund rate watch" \(Store: refund rate up more than 1\.5 pts\) reads refund rate 30\.0%/)
   assert.match(state.cases[0].ask, /^Work this case \(dispute:PP-D-1\): Dispute PP-D-1/)
   assert.equal(state.cases.length, plain.cases.length + 1)
@@ -898,7 +899,8 @@ test('alert to-dos have no badge and share the Other to-dos heading, shown under
   assert.ok(!('alertTitle' in all.groups))
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
   const card = board.split('\n').filter(l => /^alertTodo[A-Z]\w* = /.test(l))
-  assert.ok(card.length && !card.some(l => l.includes('Badge(')), 'an alert to-do has no badge')
+  assert.ok(card.length && !card.some(l => l.includes('Badge($label')), 'an alert to-do has no status badge, only the act')
+  assert.ok(card.some(l => l.includes('alertTodoAct = Badge($actLabel, $actTone)')), 'the act badge')
   assert.match(board, /^disputeTop = Row\(\[disputeIcon, disputeTitle, disputeVerdictBadge\]/m)
   assert.match(board, /^disputeButtons = Row\(\[disputeDetails, disputeAsk, disputeDone\]/m)
 })
@@ -954,4 +956,23 @@ test('an alert\'s details view draws the conclusion, a curve of the rule\'s figu
   assert.match(board, /^alertTodoDetails = Modal\(alertTodoDetailsButton, alertTodoView\)$/m)
   assert.match(board, /^alertViewChart = Card\(Column\(\[Heading\(\$detailsChartTitle, 3, \$detailsChartNote\), LineChart\(data=\$detailsSeries/m)
   assert.match(board, /^alertViewCall = Card\(Column\(\[Heading\("The AI's call", 3\), Text\(\$detailsHeadline, "body"\), Text\(\$detailsConclusion, "body"\)\]/m)
+})
+
+test('an alert is badged with what to do, from the finding, and its conclusion on the card is one line', () => {
+  const alert = { id: 'a', name: 'Refund rate jump', rule: 'r', reading: 'x', tripped: true, subject: 'Store', week: '', ask: 'why?' }
+  const long = 'The 65W charger carries the jump: 29 of 44 refunds, 58% of its orders, all citing the same fault, so this is one product and not the store.'
+  const finding = { id: 'f', alertId: 'a', week: '', at: '2026-11-10T09:00:00-05:00', title: long, act: 'stop-selling', conclusion: 'Long argument here.', action: '' }
+  const [todo] = alertTodos([alert], [finding], NOW)
+  assert.deepEqual([todo.actLabel, todo.actTone], ['Stop selling', 'danger'])
+  assert.ok(todo.detail.length <= 96, todo.detail)
+  assert.ok(todo.detail.endsWith('…'), 'cut with an ellipsis')
+  assert.ok(!todo.detail.includes('Long argument'), 'the conclusion stays in Details')
+
+  assert.deepEqual(actOf({ action: 'Pause the 65W charger' }).label, 'Stop selling')
+  assert.deepEqual(actOf({ action: 'Give the buyers their money back' }).label, 'Refund buyers')
+  assert.deepEqual(actOf(null), { label: 'Look closer', tone: 'neutral' })
+
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  assert.ok(board.includes('alertTodoTop = Row([alertTodoIcon, alertTodoTitle, alertTodoAct], "start", "center")'))
+  assert.ok(board.includes('alertTodoAct = Badge($actLabel, $actTone)'))
 })

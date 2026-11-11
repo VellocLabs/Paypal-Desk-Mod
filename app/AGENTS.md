@@ -336,13 +336,20 @@ zero sales with a history (`units(weeks(8)) > 0`), or a product never sold
 again would trigger it for weeks. After writing a formula rule, look at its
 card: *Can't check* gives the reason as its caption; fix the formula.
 
-`data/findings.json`, newest anywhere (the board sorts by `at`):
+`data/findings.json`, newest anywhere (the board sorts by `at`). `act` is
+the one thing the person should do about it, and the board badges the alert
+with it: `stop-selling` (pull the product or offer now, it is costing money),
+`refund` (money back to affected buyers), `watch` (nothing to do yet; the
+figure is worth a look week by week), `investigate` (not enough to decide —
+name the fact that is missing in `conclusion`). Always write one; a finding
+without it reads as `investigate`.
 
 ```json
 { "findings": [
   { "id": "refunds-2026-11-08", "alertId": "refund-watch", "week": "2026-11-01..2026-11-07",
     "at": "2026-11-08T10:30:00-05:00", "title": "65W charger: faulty batch since Nov 2",
-    "conclusion": "Two or three sentences with the figures.", "action": "Pause the 65W charger" }
+    "act": "stop-selling", "conclusion": "Two or three sentences with the figures.",
+    "action": "Pause the 65W charger" }
 ] }
 ```
 

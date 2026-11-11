@@ -886,8 +886,10 @@ export function alertTodos(alerts, findings, now, seriesOf = new Map()) {
   return alerts.filter(a => a.tripped).map(a => {
     const finding = latestFinding(findings, a)
     // Only a conclusion is shown; while the analysis is pending or running the line stays empty.
-    const analysis = finding ? `AI: ${[finding.title, finding.conclusion].filter(Boolean).join('. ')}` : ''
+    // One line on the board: the finding's title, cut short; the rest is in Details.
+    const analysis = finding && finding.title ? `AI: ${oneLine(finding.title)}` : ''
     const series = seriesOf.get(a.id) || null
+    const act = actOf(finding)
     return {
       id: `alert:${a.id}`,
       kind: 'alert',
@@ -900,6 +902,8 @@ export function alertTodos(alerts, findings, now, seriesOf = new Map()) {
       since: now,
       ref: a.id,
       ask: a.ask,
+      actLabel: act.label,
+      actTone: act.tone,
       detailsTitle: a.name,
       detailsSubtitle: a.rule,
       detailsHeadline: finding ? String(finding.title || '') : 'The AI has not analyzed this yet',
@@ -911,6 +915,34 @@ export function alertTodos(alerts, findings, now, seriesOf = new Map()) {
       detailsAsk: a.ask,
     }
   })
+}
+
+/**
+ * What the person should do about an alert, as {label, tone}: the AI writes
+ * `act` in its finding; an older finding is read from its `action` words, and
+ * one not analyzed yet says so.
+ */
+export const ACTS = {
+  'stop-selling': { label: 'Stop selling', tone: 'danger' },
+  refund: { label: 'Refund buyers', tone: 'warning' },
+  watch: { label: 'Watch it', tone: 'info' },
+  investigate: { label: 'Look closer', tone: 'neutral' },
+}
+
+export function actOf(finding) {
+  if (!finding) return ACTS.investigate
+  const act = String(finding.act || '').toLowerCase()
+  if (ACTS[act]) return ACTS[act]
+  const words = `${finding.action || ''} ${finding.title || ''}`
+  if (/stop|pause|pull|halt|withdraw|recall/i.test(words)) return ACTS['stop-selling']
+  if (/refund|compensat|money back/i.test(words)) return ACTS.refund
+  return ACTS.investigate
+}
+
+/** A line that fits the board: one sentence, cut at `max` characters. */
+export function oneLine(text, max = 90) {
+  const flat = String(text || '').replace(/\s+/g, ' ').trim()
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}…`
 }
 
 /** A file's list under `key`, or none. */

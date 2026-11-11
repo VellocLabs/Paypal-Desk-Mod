@@ -105,6 +105,26 @@ settles it.
   (a price or quantity change) before a cancellation when the buyer asked for
   a change, not an end.
 
+## Write what to do
+
+Every analysis ends with one `act` in its finding, which the board shows as a
+badge on the alert. Pick the strongest thing the evidence supports, not the
+most dramatic:
+
+- `stop-selling` — it is costing money now: a fault rate far above the store,
+  a bad batch, the same chargeback on one SKU. Say what to pull, and from
+  when.
+- `refund` — the money goes back: a duplicate charge, a refund the buyer never
+  got, an amount small enough that contesting costs more than refunding.
+- `watch` — nothing to do this week: the figure moved and deserves the next
+  look, but no action is justified yet.
+- `investigate` — the evidence does not decide it: name the fact that would
+  (tracking, the buyer's message, another week of data).
+
+A rise with no cause found is `watch` or `investigate`, never `stop-selling`.
+Keep the finding's `title` to one line (about 90 characters), since the board
+cuts it there; the argument goes in `conclusion`.
+
 ## After an analysis, offer to watch it
 
 An analysis that found something worth knowing next time ends with one
