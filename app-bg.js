@@ -122,7 +122,15 @@ export function register(on) {
     watch = null
   })
 
-  on('app.action', async ($, e) => handleAction($, e))
+  on('app.action', async ($, e) => {
+    try {
+      return await handleAction($, e)
+    } catch (err) {
+      // A local action that fails is still the board's: it must never fall through to the model.
+      await $.log.warn(`action ${e && e.action} failed: ${err instanceof Error ? err.message : String(err)}`)
+      return { handled: true }
+    }
+  })
 }
 
 /**

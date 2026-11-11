@@ -1011,3 +1011,22 @@ test('every action the module answers is declared local, so a press never turns 
     assert.ok(declared.has(action), `${action} is pressed on the board but not declared local`)
   }
 })
+
+test('a local action that throws stays local: it answers handled rather than falling through to the model', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  const handlers = {}
+  registerBackgroundEnv(handlers)
+  const failing = {
+    ...world.$,
+    app: { ...world.$.app, state: { get: async () => { throw new Error('state gone') }, set: async () => {} } },
+    fs: world.$.fs,
+  }
+  const answer = await handlers['app.action'](failing, { action: 'toggle_done' })
+  assert.deepEqual(answer, { handled: true })
+  assert.match(world.logs.at(-1), /action toggle_done failed: state gone/)
+})
+
+/** Runs the module's register() against a handler map, so a test can press one. */
+function registerBackgroundEnv(into) {
+  registerBackground((name, fn) => { into[name] = fn })
+}
