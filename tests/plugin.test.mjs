@@ -737,7 +737,7 @@ test('the done list shows to-dos done within DONE_DAYS, latest first, live when 
 test('events carry the emoji and the rule they came from; rule cards are settings with no bell or big figure', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
   assert.match(board, /^todoTop = Row\(\[todoIcon, todoTitle, todoBadge\]/m)
-  assert.match(board, /^disputeTop = Row\(\[disputeIcon, disputeTitle, disputeVerdictBadge\], "start", "center"\)$/m)
+  assert.match(board, /^disputeTop = Row\(\[disputeTitleRow, disputeVerdictBadge\], "spaceBetween", "center"\)$/m)
   assert.match(board, /^disputeIcon = Text\(\$icon\)$/m, 'a dispute is marked with its own icon, as an alert is with a bell')
   assert.match(board, /^todoTitle = Heading\(\$title, 3, \$source\)$/m)
   assert.match(board, /^alertsHead = Heading\("Alert rules", 2, /m)
@@ -901,7 +901,8 @@ test('alert to-dos have no badge and share the Other to-dos heading, shown under
   const card = board.split('\n').filter(l => /^alertTodo[A-Z]\w* = /.test(l))
   assert.ok(card.length && !card.some(l => l.includes('Badge($label')), 'an alert to-do has no status badge, only the act')
   assert.ok(card.some(l => l.includes('alertTodoAct = Badge($actLabel, $actTone)')), 'the act badge')
-  assert.match(board, /^disputeTop = Row\(\[disputeIcon, disputeTitle, disputeVerdictBadge\]/m)
+  assert.ok(board.includes('alertTodoHead = Row([alertTodoIcon, alertTodoTitle], "start", "center")'), 'the title keeps its own row')
+  assert.match(board, /^disputeTop = Row\(\[disputeTitleRow, disputeVerdictBadge\], "spaceBetween", "center"\)$/m)
   assert.match(board, /^disputeButtons = Row\(\[disputeDetails, disputeAsk, disputeDone\]/m)
 })
 
@@ -977,6 +978,6 @@ test('an alert is badged with what to do, from the finding, and its conclusion o
   assert.deepEqual(actOf({ act: 'email-the-buyers' }), { label: 'Email the buyers', tone: 'neutral' }, "a word of the AI's own is badged as written")
 
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
-  assert.ok(board.includes('alertTodoTop = Row([alertTodoIcon, alertTodoTitle, alertTodoAct], "start", "center")'))
+  assert.ok(board.includes('alertTodoTop = Row([alertTodoHead, alertTodoAct], "spaceBetween", "center")'), 'the badge sits at the end of the first line')
   assert.ok(board.includes('alertTodoAct = Badge($actLabel, $actTone)'))
 })
