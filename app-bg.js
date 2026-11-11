@@ -17,6 +17,7 @@ import { addDays, dateOf, shortDate } from './lib/dates.js'
 import { DEFAULT_RULES, checkRules, disputeAlerts } from './lib/alerts.js'
 import { refundBreakdown } from './lib/insights.js'
 import { disputeFacts, disputesNote, flatDispute, latestReview, reviewCards, waitsOnMerchant } from './lib/disputes.js'
+import { isProduct, productTrend } from './lib/productTrend.js'
 import { invoiceRowFields, paymentOrders, readStoreRow, salesBoard } from './lib/sales.js'
 
 export const POLL_MS = 5 * 60_000
@@ -50,6 +51,8 @@ export const REFUNDS_FILE = 'data/refunds.json'
 const FINDINGS_SHOWN = 5
 /** The AI's dispute reviews: it writes them, the board shows them on the dispute's card. */
 export const REVIEWS_FILE = 'data/reviews.json'
+/** The product a tab was asked for: {"sku": "DSK-HOOK", "days": 30}. The agent writes it. */
+export const WATCH_FILE = 'data/watch.json'
 /** What the desk checked for each open dispute, for the AI to start from; rewritten when it changes. */
 export const DISPUTES_FILE = 'data/disputes.json'
 /** Each open dispute's `get_dispute` answer, by id, with the update time it was read at. */
@@ -204,7 +207,18 @@ async function rulesText($) {
       return ''
     }
   }
-  return `${await read(ALERTS_FILE)}\u0000${await read(FINDINGS_FILE)}\u0000${await read(REVIEWS_FILE)}`
+  return `${await read(ALERTS_FILE)}\u0000${await read(FINDINGS_FILE)}\u0000${await read(REVIEWS_FILE)}\u0000${await read(WATCH_FILE)}`
+}
+
+/**
+ * The product the person asked a tab for, {sku, days}, or null: `data/watch.json`
+ * holding a SKU the store sells. A missing or unknown SKU means no such tab.
+ */
+export async function readWatch($) {
+  const doc = await readJsonFile($, WATCH_FILE)
+  const sku = doc && typeof doc.sku === 'string' ? doc.sku : ''
+  if (!sku || !isProduct(sku)) return null
+  return { sku, days: Number(doc.days) || 30 }
 }
 
 /** Rewrites the refund breakdown file when its content changed. */
@@ -257,6 +271,8 @@ export async function syncOnce($, { inbox, now }) {
   const reviews = listOf(await readJsonFile($, REVIEWS_FILE), 'reviews')
 
   let next = deriveState({ previous, raw, orders, alertRules, findings, facts, reviews, running: analyzing, openInvoices: scan.openInvoices, unread: scan.unread, inboxFiles, handled, errors, unavailable, now })
+  const watch = await readWatch($)
+  if (watch) next = { ...next, productTrend: productTrend(orders, { ...watch, today: dateOf(now) }) }
   if (await startReview($, facts, reviews, now, () => refreshReviews($))) {
     const cases = next.cases.map(c => withReview(c, facts, reviews))
     next = { ...next, ...todoView(cases) }

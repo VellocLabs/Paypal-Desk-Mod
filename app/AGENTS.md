@@ -77,6 +77,16 @@ Speak of them as orders and sales, not as invoices.
 - **Reshape the dashboard when asked.** Load the `a2ui` skill, edit
   `app.a2ui`, call `BuildApp`. Keep every binding under `$/data/...` as the
   module publishes it; see the field list below.
+- **Give a product its own tab.** When the person wants one product's own
+  figures ("I just launched this, show me its last month"), write
+  `data/watch.json` with the product's SKU from `lib/catalog.js` and the days
+  wanted (7–90, 30 by default), such as `{"sku": "DSK-HOOK", "days": 30}`.
+  The module publishes `productTrend` within seconds. Then add a tab to
+  `app.a2ui` for it, bound to `$/data/productTrend`: a `Heading` with
+  `$/data/productTrend/note`, a `Row` of `Metric`s from `kpis`, a `LineChart`
+  of `series` on `units` and another on `sales`, then `BuildApp`. Check the
+  figures are there before saying it is done. Asked for another product, change
+  the file, not the tab; asked to drop it, delete the file and the tab.
 
 ## Disputes
 
@@ -374,6 +384,7 @@ missing.
 | `alerts` | Your rules as checked: `{id, name, rule, condition, headline, summary, subject, value, delta, trend, better, reading, week, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
 | `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
+| `productTrend` | The tab a product was given: `{sku, name, from, to, days, note, ask, series, kpis}`; `series` is `{label, units, sales}` a day, `kpis.{units,sales,orders,refunds}` is `{label, value, trendValue?, trend?}`; absent until `data/watch.json` names a product |
 | `disputeCases`, `alertCases`, `otherCases` | `cases` split for the board: the dispute cards, then the to-dos of tripped alerts (shown with no badge), then the rest. A dispute case adds its review: `{reviewState, verdict, verdictLabel, verdictTone, verdictLine, againLabel, detailsTitle, detailsSubtitle, detailsLabel, detailsTone, detailsNote, detailsBody, discussQuote}`; `discussQuote` is the review in Markdown that *Ask AI* attaches; `reviewState` is `pending`, `reviewing` or `reviewed`; `detailsBody` is Markdown |
 | `groups` | The headings over the groups of to-dos: `{disputesTitle, disputesNote, otherTitle}`; a title is empty when its heading is not shown (*Other to-dos*, over the alert to-dos and the rest, shows only under the disputes) |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |

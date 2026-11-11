@@ -12,7 +12,7 @@ import { describeCall, isWriteTool, register as registerGuard } from '../hooks/g
 import {
   DONE_DAYS, doneTodos, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
-  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, disputeDetails, startReview, refreshReviews, todoView, showBadge,
+  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, WATCH_FILE, disputeDetails, readWatch, startReview, refreshReviews, todoView, showBadge,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
 import { DEFAULT_RULES } from '../lib/alerts.js'
@@ -51,7 +51,7 @@ test('the hooks file names a module inside hooks/, and the server is the one the
 })
 
 test('the background module imports only .js files, which the runtime compiler lowers', () => {
-  const files = ['app-bg.js', 'lib/catalog.js', 'lib/dates.js', 'lib/disputes.js', 'lib/insights.js', 'lib/memo.js', 'lib/sales.js']
+  const files = ['app-bg.js', 'lib/catalog.js', 'lib/dates.js', 'lib/disputes.js', 'lib/insights.js', 'lib/memo.js', 'lib/productTrend.js', 'lib/sales.js']
   for (const file of files) {
     const text = readFileSync(join(root, file), 'utf8')
     for (const [, spec] of text.matchAll(/^import [^'"]*['"]([^'"]+)['"]/gm)) {
@@ -900,4 +900,24 @@ test('alert to-dos have no badge and share the Other to-dos heading, shown under
   assert.ok(card.length && !card.some(l => l.includes('Badge(')), 'an alert to-do has no badge')
   assert.match(board, /^disputeTop = Row\(\[disputeIcon, disputeTitle, disputeVerdictBadge\]/m)
   assert.match(board, /^disputeButtons = Row\(\[disputeDetails, disputeAsk, disputeDone\]/m)
+})
+
+// ---- a product's own tab ---------------------------------------------------
+
+test('data/watch.json names the product whose tab was asked for, and a sync publishes its figures', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  world.$.fs.exists = async p => p === WATCH_FILE
+  world.$.fs.read = async p => (p === WATCH_FILE ? JSON.stringify({ sku: 'CAB-C2C', days: 30 }) : '')
+  assert.deepEqual(await readWatch(world.$), { sku: 'CAB-C2C', days: 30 })
+
+  await syncOnce(world.$, { inbox: null, now: NOW })
+  const t = world.state.value.productTrend
+  assert.equal(t.sku, 'CAB-C2C')
+  assert.equal(t.series.length, 30)
+  assert.equal(t.to, '2026-11-09', 'the window ends yesterday')
+
+  world.$.fs.read = async p => (p === WATCH_FILE ? JSON.stringify({ sku: 'NOPE-1' }) : '')
+  assert.equal(await readWatch(world.$), null, 'a SKU the store does not sell is no tab')
+  await syncOnce(world.$, { inbox: null, now: NOW })
+  assert.equal(world.state.value.productTrend, undefined, 'the tab goes when the file names nothing')
 })
