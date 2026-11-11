@@ -107,23 +107,33 @@ settles it.
 
 ## After an analysis, offer to watch it
 
-When an analysis turns up something the store would want told about next
-time, the reply ends with one offer to watch it: the figure, and the rule it
-would become. A conclusion on its own leaves the person to notice the next
-one alone.
+An analysis that found something worth knowing next time ends with one
+recommendation: watch the **class** of thing, not the one row that tripped
+it. The rule you offer should catch the next product, the next country, the
+next duplicate — the one in hand is only the evidence for it. Name the rule
+and the figure that justifies it.
 
-- A product refunded at 8% or more of its orders, or at twice the store's
-  rate: "Shall I watch the 65W charger? I would alert you when its weekly
-  refund rate goes above 10%."
-- A store refund rate that rose: offer the rule behind the rise, or the
-  product that carries it.
-- One payment made twice, a country's orders down by a quarter week over
-  week, a week's sales under a floor: offer that rule.
+- A product refunded far above the store: "Shall I watch every product's
+  refund rate? I would alert you when any product goes above 10% in a week —
+  the 65W charger is at 33% now." That is `scope: "any_product"`, not a rule
+  for the charger alone.
+- A country's orders falling: watch every country (`scope: "country"` per
+  country, or a formula over `each: "country"`), unless the fall is
+  store-wide, in which case watch the store.
+- A week's sales under a floor: the store's own floor, which every week
+  answers to.
+- One payment made twice: the rule that catches any second charge of one
+  order, not that payer.
 
-Offer once per finding, never on every answer, and one rule at a time unless
-both follow from the same finding. When the person says yes, write the rule
-into `data/alerts.json`, keeping the rules already there, then say what
-figure it reads now and whether it is met.
+Narrow it to one SKU, country or customer only when that thing is special in
+a way the general rule cannot hold — a product whose normal refund rate is
+high enough to need its own ceiling, a reseller whose orders are larger than
+the rest — or when the person asked for that one. Say which it is and why it
+is narrow.
+
+Offer once per finding, one rule at a time unless both follow from it. On
+yes, write the rule into `data/alerts.json` keeping the rules already there,
+then say what it reads now and whether it is met.
 
 ## Reporting
 
