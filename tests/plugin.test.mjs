@@ -12,7 +12,7 @@ import { describeCall, isWriteTool, register as registerGuard } from '../hooks/g
 import {
   DONE_DAYS, doneTodos, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
-  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, WATCH_FILE, actOf, alertTodos, disputeDetails, doneSection, readWatch, ruleCards, startReview, refreshReviews, todoView, showBadge,
+  CONNECT_WATCH_MS, DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, SIGN_IN, WATCH_FILE, actOf, alertTodos, disputeDetails, doneSection, readWatch, ruleCards, startReview, refreshReviews, todoView, showBadge,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
 import { DEFAULT_RULES } from '../lib/alerts.js'
@@ -409,15 +409,18 @@ test('syncOnce asks Transaction Search for a 30-day window of ISO 8601 date-time
   assert.ok(!world.calls.some(c => c.tool === 'list_subscription_plans'))
 })
 
-test('syncOnce without a connection publishes the error and keeps the board', async () => {
+test('without a connection the board is the sign-in gate and nothing else, and the icon badge clears', async () => {
   const world = fakeDollar({ answers: toolAnswers, connected: false })
-  world.state.value = { week: { range: 'kept' }, cases: [{ id: 'kept' }], trends: { range: 'kept' }, ruleCards: [{ id: 'paypal-disputes' }], disputeReviews: [{ id: 'PP-D-1' }], findings: [{ id: 'f' }] }
+  const badges = []
+  world.$.app.badge = async n => { badges.push(n) }
+  world.state.value = { week: { range: 'kept' }, cases: [{ id: 'kept' }], trends: { range: 'kept' }, ruleCards: [{ id: 'paypal-disputes' }], findings: [{ id: 'f' }], summary: { todoCount: 3 } }
   await syncOnce(world.$, { now: NOW })
-  for (const key of ['trends', 'ruleCards', 'disputeReviews', 'findings']) assert.ok(world.state.value[key], `${key} is kept`)
-  assert.equal(world.state.value.sync.ok, false)
-  assert.match(world.state.value.sync.note, /sign-in required/)
-  assert.deepEqual(world.state.value.week, { range: 'kept' })
-  assert.deepEqual(world.state.value.cases, [{ id: 'kept' }])
+  const board = world.state.value
+  assert.equal(board.sync.ok, false)
+  assert.match(board.sync.note, /sign-in required/)
+  assert.deepEqual([board.signedIn, board.cases, board.trends, board.ruleCards, board.findings], [false, [], undefined, [], []])
+  assert.deepEqual(board.gateRows, [{ title: 'Sign in to PayPal', text: SIGN_IN.text, button: 'Sign in' }])
+  assert.deepEqual(badges, [0], 'the icon badge goes with the board')
 })
 
 test('publishState falls back to state.set without publish, and sends nothing when nothing changed', async () => {
@@ -448,7 +451,7 @@ test('app.start returns before the first sync ends and arms the timers; a change
   world.$.fs.read = async path => appFiles[path]
   await handlers['app.start'](world.$, { appId: 'paypal-desk-board', folder: '/apps/x', folders: { read: [], write: [] }, locale: 'en' })
   assert.equal(world.state.value.week, undefined, 'the sync is still reading')
-  assert.deepEqual([...timers.keys()], [5 * 60_000, RULES_WATCH_MS])
+  assert.deepEqual([...timers.keys()], [5 * 60_000, CONNECT_WATCH_MS, RULES_WATCH_MS], 'the sync timer, the sign-in probe, the rule watch')
   release()
   await whenIdle()
   assert.equal(world.state.value.week.kpis.net.value, '$200')
@@ -465,7 +468,7 @@ test('app.start returns before the first sync ends and arms the timers; a change
   assert.deepEqual(world.state.value.alerts.map(a => [a.id, a.status]), [['floor', 'Triggered']])
 
   await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
-  assert.equal(cancelled, 2)
+  assert.equal(cancelled, 3)
 })
 
 test('a sync adds the store payments from Transaction Search, every page, and keeps the last good ones when the read fails', async () => {
@@ -791,7 +794,7 @@ test('the board uses only icons the catalog offers', () => {
 
 test('board: no tab repeats its own name as a title; each tab opens on its period or status line', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
-  const tabs = [...board.match(/^root = Tabs\(.*$/m)[0].matchAll(/title: "([^"]+)", child: (\w+)/g)]
+  const tabs = [...board.match(/^boardTabs = Tabs\(.*$/m)[0].matchAll(/title: "([^"]+)", child: (\w+)/g)]
   assert.deepEqual(tabs.map(m => m[1]), ['Overview', 'Trends', 'Actions'])
   for (const [, name, child] of tabs) {
     const first = board.match(new RegExp(`^${child} = Column\\(\\[(\\w+)`, 'm'))[1]

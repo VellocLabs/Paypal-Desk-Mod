@@ -1,5 +1,10 @@
 surface("app")
-root = Tabs([{title: "Overview", child: week}, {title: "Trends", child: trends}, {title: "Actions", child: todo, badge: $/data/summary/todoCount}], open=$/data/summary/openTab)
+root = Column([gateSection, boardTabs], "start", "stretch")
+gateSection = Column(_template($/data/gateRows, gateCard))
+gateCard = Card(Column([Heading($title, 2, $text), Row([gateButton], "start", "center")], "start", "stretch"))
+gateButton = Button(gateButtonText, "default", Event("compose", {text: "Sign in to PayPal for the desk."}))
+gateButtonText = Text($button)
+boardTabs = Tabs([{title: "Overview", child: week}, {title: "Trends", child: trends}, {title: "Actions", child: todo, badge: $/data/summary/todoCount}], open=$/data/summary/openTab)
 
 week = Column([week_head, week_kpis, week_charts, week_tables, week_sales_note, week_sync_note])
 week_head = Heading(subtitle=$/data/week/range, action=Event("compose", {text: $/data/week/ask/all}), actionLabel="Ask AI to analyze all changes")

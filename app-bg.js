@@ -70,6 +70,12 @@ export const DONE_DAYS = 7
 const TODO_TAB = 2
 /** How often the module looks for a changed alert or finding file between syncs. */
 export const RULES_WATCH_MS = 10_000
+/**
+ * How often the module asks whether PayPal is still signed in. The host raises
+ * no sign-in or sign-out event, so this is the only way to notice one; a flip
+ * runs a sync at once, which publishes the gate or the board.
+ */
+export const CONNECT_WATCH_MS = 30_000
 const SEEN_KEY = 'inbox.seen'
 export const ORDERS_KEY = 'orders.cache'
 
@@ -83,6 +89,7 @@ export function whenIdle() {
 export function register(on) {
   let timer = null
   let watch = null
+  let probe = null
   let running = false
 
   on('app.start', async ($, e) => {
@@ -108,6 +115,23 @@ export function register(on) {
     // The first full invoice read can outlast app.start's budget, so it is not awaited.
     run()
     timer = $.clock.every(POLL_MS, run)
+    // PayPal signing in or out is only visible by asking, so the module asks.
+    if (probe) probe.cancel()
+    probe = $.clock.every(CONNECT_WATCH_MS, async () => {
+      if (running) return
+      let connected = false
+      try {
+        const answer = await $.mcp.connect(SERVER)
+        connected = Boolean(answer && answer.isConnected)
+      } catch {
+        connected = false
+      }
+      if (connection === null) { connection = connected; return }
+      if (connected !== connection) {
+        connection = connected
+        await run()
+      }
+    })
     // A rule or finding the agent just wrote shows on the board within seconds, not at the next sync.
     if (watch) watch.cancel()
     watch = $.clock.every(RULES_WATCH_MS, async () => {
@@ -118,8 +142,11 @@ export function register(on) {
   on('app.stop', async () => {
     if (timer) timer.cancel()
     if (watch) watch.cancel()
+    if (probe) probe.cancel()
     timer = null
     watch = null
+    probe = null
+    connection = null
   })
 
   on('app.action', async ($, e) => {
@@ -256,13 +283,20 @@ export async function syncOnce($, { inbox, now }) {
   const connected = await $.mcp.connect(SERVER)
   if (!connected || connected.isConnected !== true) {
     const message = (connected && connected.message) || 'the PayPal server is not connected'
+    await showBadge($, null)
+    loading = false
     await publishState($, previous, {
       ...emptyState(previous),
+      ...signedOut(),
       sync: { at: now, ok: false, error: message, note: `Not connected to PayPal: ${message}` },
     })
     return
   }
 
+  if (!loading) {
+    loading = true
+    await publishState($, previous, { ...emptyState(previous), ...signedIn(), loading: true })
+  }
   const errors = {}
   const unavailable = []
   const read = (tool, args) => readList($, tool, args, errors, unavailable)
@@ -300,6 +334,9 @@ export async function syncOnce($, { inbox, now }) {
 }
 
 /** The facts of the last sync's open disputes, to rebuild the review cards when a review ends. */
+let loading = false
+/** The connection state the last probe saw; null until it has looked once. */
+let connection = null
 let factsSeen = []
 let disputesWritten = ''
 
@@ -576,7 +613,7 @@ let badgeSent
 
 /** Puts `summary.todoCount` on the app's topbar icon (0 shows none); skipped where the host has no `$.app.badge` or the count is unchanged. */
 export async function showBadge($, next) {
-  const count = next && next.summary && next.summary.todoCount
+  const count = next ? (next.summary && next.summary.todoCount) : 0
   if (typeof $.app.badge !== 'function' || !Number.isInteger(count) || count < 0 || count === badgeSent) return
   await $.app.badge(count)
   badgeSent = count
@@ -1121,6 +1158,40 @@ export function viewFindings(findings) {
 }
 
 /** The board as it was, for a sync that could not reach PayPal: every tab keeps its last figures. */
+/** What the board shows while PayPal is not connected: the way in, and nothing else. */
+export const SIGN_IN = {
+  title: 'Sign in to PayPal',
+  text: "The desk reads your account through PayPal's own sign-in. Approve it once, in the window that opens.",
+  button: 'Sign in',
+}
+
+/** What the board shows while the first sync runs. */
+export const LOADING = {
+  title: 'Reading your PayPal account',
+  text: 'The first read walks every invoice, payment and dispute. This takes a minute.',
+  button: '',
+}
+
+const gate = row => [{ title: row.title, text: row.text, button: row.button }]
+
+/** The board while PayPal is not connected: the gate in front, every list empty. */
+export function signedOut() {
+  return {
+    signedIn: false,
+    loading: false,
+    gateRows: gate(SIGN_IN),
+    cases: [], needs: [], doneCases: [], doneShown: [], doneHeadRows: [],
+    disputeCases: [], alertCases: [], otherCases: [],
+    disputeReviews: [], findings: [], alerts: [], paypalAlerts: [], ruleCards: [],
+    summary: {}, week: undefined, trends: undefined, productTrend: undefined,
+  }
+}
+
+/** The board once PayPal answered: no gate. */
+export function signedIn() {
+  return { signedIn: true, gateRows: [] }
+}
+
 function emptyState(previous) {
   return { ...previous, summary: previous.summary || {}, cases: previous.cases || [] }
 }
