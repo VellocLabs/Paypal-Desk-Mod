@@ -12,7 +12,7 @@ import { describeCall, isWriteTool, register as registerGuard } from '../hooks/g
 import {
   DONE_DAYS, doneTodos, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
-  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, WATCH_FILE, actOf, alertTodos, disputeDetails, readWatch, ruleCards, startReview, refreshReviews, todoView, showBadge,
+  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, WATCH_FILE, actOf, alertTodos, disputeDetails, doneSection, readWatch, ruleCards, startReview, refreshReviews, todoView, showBadge,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
 import { DEFAULT_RULES } from '../lib/alerts.js'
@@ -672,7 +672,7 @@ test('mark_done records the day in the handled file and drops the to-do from the
   assert.deepEqual(JSON.parse(files['data/handled.json']), [{ id: 'forever', at: '' }, { id: 'b', at: '2026-11-10', todo: row('b') }], 'entries past 60 days dropped, the id recorded once, with the to-do as it was')
   assert.deepEqual(world.state.value.cases.map(c => c.id), ['a'])
   assert.deepEqual(world.state.value.needs.map(c => c.id), ['a'])
-  assert.deepEqual(world.state.value.doneCases, [{ ...row('b'), source: '', doneLabel: '✓ Done Nov 10', doneNote: 'Done Nov 10' }], 'the done card is the open card, as it was')
+  assert.deepEqual(world.state.value.doneCases, [{ ...row('b'), source: '', doneNote: 'Done Nov 10' }], 'the done card is the open card, as it was')
   assert.deepEqual(world.state.value.summary, { alertsNote: 'n', casesNote: '1 open, most urgent first', todoCount: 1, openTab: 2 })
   assert.deepEqual(await handleAction(world.$, { action: 'mark_done', context: {} }), { handled: false })
 
@@ -726,8 +726,8 @@ test('the done list shows to-dos done within DONE_DAYS, latest first, live when 
     'dispute:forever',
   ]
   assert.deepEqual(doneTodos(handled, live, '2026-11-09'), [
-    { id: 'alert:a', kind: 'alert', title: 'Refund rate jump triggered', source: 'Alert rule: Refund rate jump', detail: 'd', doneLabel: '✓ Done Nov 8', doneNote: 'Alert rule: Refund rate jump · Done Nov 8' },
-    { id: 'invoice:x', kind: 'overdue_invoice', title: 'Invoice X overdue 9 days', detail: 'now', source: '', doneLabel: '✓ Done Nov 5', doneNote: 'Done Nov 5' },
+    { id: 'alert:a', kind: 'alert', title: 'Refund rate jump triggered', source: 'Alert rule: Refund rate jump', detail: 'd', doneNote: 'Alert rule: Refund rate jump · Done Nov 8' },
+    { id: 'invoice:x', kind: 'overdue_invoice', title: 'Invoice X overdue 9 days', detail: 'now', source: '', doneNote: 'Done Nov 5' },
   ])
   assert.equal(isDone(handled, 'alert:del', '2026-11-09'), true, 'a deleted to-do stays off the open list')
   const state = deriveState({ raw, orders: storeOrders, openInvoices, handled: [{ id: 'invoice:INV2-A', at: '2026-11-10' }], errors: {}, now: NOW })
@@ -748,15 +748,29 @@ test('events carry the emoji and the rule they came from; rule cards are setting
   assert.doesNotMatch(board, /paypalAlertList|paypalCard/, 'a dispute is an event, not a card in the rules grid')
 })
 
-test('a done to-do shows a green check and a menu with Undo and Delete', () => {
+test('done to-dos fold into their own section, the card unchanged with one more button', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
-  assert.match(board, /^todo = Column\(\[todoHead, disputeHead, disputeList, otherHead, alertTodoList, todoList, doneList, alertsHead/m)
+  assert.match(board, /^todo = Column\(\[todoHead, disputeHead, disputeList, otherHead, alertTodoList, todoList, doneSectionView, alertsHead/m)
+  assert.match(board, /^doneSectionView = Column\(\[doneHeadList, doneList\], "start", "stretch"\)$/m)
+  assert.match(board, /^doneHeadList = Column\(_template\(\$\/data\/doneHeadRows, doneHeadRow\)\)$/m)
+  assert.match(board, /^doneToggle = Button\(doneToggleLabel, "borderless", Event\("toggle_done"\)\)$/m)
+  assert.match(board, /^doneList = Column\(_template\(\$\/data\/doneShown, doneCard\)\)$/m, 'the folded list is empty')
   assert.match(board, /^doneCard = Card\(doneRow\)$/m, 'the same card as an open to-do')
-  assert.match(board, /^doneIcon = Text\("✅"\)$/m)
-  assert.match(board, /^doneTitle = Heading\(\$title, 3, \$doneNote\)$/m)
-  assert.match(board, /^doneMenu = Menu\("More", \[doneUndo, doneDelete\]\)$/m)
+  assert.match(board, /^doneIcon = Text\(\$icon\)$/m, 'no green check: the card as it was')
+  assert.match(board, /^doneMenu = Menu\("⋯", \[doneUndo, doneDelete\]\)$/m, 'one more button in place of the three')
   assert.match(board, /Event\("undo_done", \{id: \$id\}\)/)
   assert.match(board, /Event\("delete_todo", \{id: \$id\}\)/)
+})
+
+test('the done section is folded until asked for, and its heading carries the count', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  world.state.value = { cases: [], doneCases: [{ id: 'alert:a', title: 't', source: 's', detail: 'd', icon: '🔔' }], doneOpen: false }
+  const toggled = await handleAction(world.$, { action: 'toggle_done' })
+  assert.deepEqual(toggled, { handled: true })
+  assert.deepEqual([world.state.value.doneOpen, world.state.value.doneShown.length, world.state.value.doneHeadRows], [true, 1, [{ label: 'Done (1)', chevron: '⌄' }]])
+  await handleAction(world.$, { action: 'toggle_done' })
+  assert.deepEqual([world.state.value.doneOpen, world.state.value.doneShown.length, world.state.value.doneHeadRows[0].chevron], [false, 0, '›'])
+  assert.deepEqual(doneSection([], false).doneHeadRows, [], 'nothing done: no heading at all')
 })
 
 test('alerts are added from a plus card that ends the rule grid, not from a button in the heading', () => {

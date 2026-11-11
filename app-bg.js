@@ -140,6 +140,7 @@ export async function handleAction($, e) {
   if (todoAction && id) return changeTodo($, id, todoAction)
   if (e && e.action === 'review_dispute' && id) return reviewAgain($, id)
   if (e && e.action === 'open_details') return { handled: true }
+  if (e && e.action === 'toggle_done') return toggleDone($)
   const target = e && e.action === 'dismiss_finding' ? { file: FINDINGS_FILE, key: 'findings' } : null
   if (!target || !id) return { handled: false }
   const doc = await readJsonFile($, target.file)
@@ -155,6 +156,14 @@ export async function handleAction($, e) {
 }
 
 const TODO_ACTIONS = { mark_done: 'done', undo_done: 'open', delete_todo: 'deleted' }
+
+/** Folds or unfolds the done section, keeping the list it shows in step. */
+async function toggleDone($) {
+  const state = (await $.app.state.get()) || {}
+  const done = Array.isArray(state.doneCases) ? state.doneCases : []
+  await publishState($, state, { ...state, ...doneSection(done, !state.doneOpen) })
+  return { handled: true }
+}
 
 /**
  * Moves a to-do between the open list, the done list and neither: records it
@@ -178,7 +187,7 @@ async function changeTodo($, id, to) {
   const others = open.filter(c => c.id !== id)
   const cases = to === 'open' && todo ? openTodos([...others, todo], [], today) : others
   const doneCases = doneTodos(next, cases, today)
-  await publishState($, state, { ...state, ...todoView(cases), doneCases, summary: { ...(state.summary || {}), ...todoSummary(cases) } })
+  await publishState($, state, { ...state, ...todoView(cases), ...doneSection(doneCases, state.doneOpen), summary: { ...(state.summary || {}), ...todoSummary(cases) } })
   // An alert's to-do is rebuilt from the alert itself; any other waits for the next sync.
   if (to === 'open' && !todo && id.startsWith('alert:')) await refreshFindings($)
   return { handled: true }
@@ -500,6 +509,7 @@ export async function refreshFindings($) {
     alerts,
     ...todoView(cases),
     doneCases: doneTodos(handled, live, dateOf(now)),
+    ...doneSection(doneTodos(handled, live, dateOf(now)), state.doneOpen),
     findings: viewFindings(findings),
     ruleCards: ruleCards(alerts, state.paypalAlerts),
     summary: { ...(state.summary || {}), ...todoSummary(cases), findingsNote: findingsNote(findings), alertsNote: alertsNote(alerts, state.paypalAlerts) },
@@ -783,8 +793,23 @@ export function doneTodos(handled, live, today) {
       if (!todo) return []
       const { doneNote: _note, doneLabel: _label, ...card } = todo
       const done = `Done ${shortDate(h.at)}`
-      return [{ ...card, id: h.id, detail: card.detail || '', source: card.source || '', kind: card.kind || '', doneLabel: `✓ ${done}`, doneNote: [card.source, done].filter(Boolean).join(' · ') }]
+      return [{ ...card, id: h.id, detail: card.detail || '', source: card.source || '', kind: card.kind || '', doneNote: [card.source, done].filter(Boolean).join(' · ') }]
     })
+}
+
+/**
+ * The done section as the board draws it: its heading row (none while nothing
+ * is done), the list shown, which is empty while the section is folded, and
+ * whether it is open.
+ */
+export function doneSection(done, open) {
+  const list = Array.isArray(done) ? done : []
+  return {
+    doneOpen: Boolean(open),
+    doneCases: list,
+    doneShown: open ? list : [],
+    doneHeadRows: list.length ? [{ label: `Done (${list.length})`, chevron: open ? '⌄' : '›' }] : [],
+  }
 }
 
 /** Whether a to-do is hidden on `today`: done for good, or done less than DONE_DAYS ago. */
@@ -820,6 +845,7 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
     ...board,
     ...todoView(cases),
     doneCases: doneTodos(handled, live, today),
+    ...doneSection(doneTodos(handled, live, today), previous.doneOpen),
     alerts,
     paypalAlerts,
     ruleCards: ruleCards(alerts, paypalAlerts),
