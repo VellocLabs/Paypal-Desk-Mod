@@ -801,11 +801,15 @@ export function doneTodos(handled, live, today) {
       if (!todo) return []
       const { doneNote: _note, doneLabel: _label, ...card } = todo
       const done = `Done ${shortDate(h.at)}`
-      // A card stored by an older build may miss what the card draws now.
+      // A dispute's open card is its title and verdict line; the payment/order
+      // detail would make the done card a third line. A card stored by an older
+      // build may miss what the card draws now.
+      const dispute = card.kind === 'dispute'
       return [{
-        ...card, id: h.id, detail: card.detail || '', source: card.source || '', kind: card.kind || '',
+        ...card, id: h.id, source: card.source || '', kind: card.kind || '',
+        detail: dispute ? '' : card.detail || '',
         icon: card.icon || '', label: card.label || '', tone: card.tone || 'neutral',
-        doneNote: [card.source, done].filter(Boolean).join(' · '),
+        doneNote: [dispute ? card.verdictLine || card.source : card.source, done].filter(Boolean).join(' · '),
       }]
     })
 }
@@ -821,7 +825,7 @@ export function doneSection(done, open) {
     doneOpen: Boolean(open),
     doneCases: list,
     doneShown: open ? list : [],
-    doneHeadRows: list.length ? [{ label: `Done (${list.length})`, chevron: open ? '▾' : '▸' }] : [],
+    doneHeadRows: list.length ? [{ label: `${open ? 'v' : '>'} Done (${list.length})`, action: open ? 'Collapse' : 'Expand' }] : [],
   }
 }
 
