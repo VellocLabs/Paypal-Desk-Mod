@@ -224,10 +224,11 @@ write the finding, and change nothing on PayPal.
 next time — a product refunded far above the store, a payment made twice, a
 week that fell — end the reply with the one recommendation the
 `paypal-rules` skill's *After an analysis* section describes: the rule that
-would catch the next one of its kind, named with its figure and threshold,
-narrowed to a single product, country or customer only when that thing is
-special or the person asked for it. A run the module started cannot ask:
-there, write the finding only.
+would catch the next one of its kind, named with its figures and with both
+bounds where both apply (the absolute line, and the move on the week
+before), narrowed to a single product, country or customer only when that
+thing is special or the person asked for it. A run the module started cannot
+ask: there, write the finding only.
 
 **Edit.** *Edit* on a card writes `Change the alert "<name>" (id: <id>,
 now <rule>): ` into the chat box, and the person types the change. Change

@@ -110,20 +110,31 @@ settles it.
 An analysis that found something worth knowing next time ends with one
 recommendation: watch the **class** of thing, not the one row that tripped
 it. The rule you offer should catch the next product, the next country, the
-next duplicate — the one in hand is only the evidence for it. Name the rule
-and the figure that justifies it.
+next duplicate — the one in hand is only the evidence for it.
+
+Give the rule **two bounds wherever both make sense**: an absolute line, and
+a move from where the figure was. The line catches what is already bad; the
+move catches the thing that was fine and turned — a product whose refund
+rate doubles from 0.4% to 0.9% deserves a look even though it never reaches
+the line. Say both in the offer, with today's figure.
 
 - A product refunded far above the store: "Shall I watch every product's
-  refund rate? I would alert you when any product goes above 10% in a week —
-  the 65W charger is at 33% now." That is `scope: "any_product"`, not a rule
-  for the charger alone.
-- A country's orders falling: watch every country (`scope: "country"` per
-  country, or a formula over `each: "country"`), unless the fall is
-  store-wide, in which case watch the store.
-- A week's sales under a floor: the store's own floor, which every week
-  answers to.
+  weekly refund rate? I would alert you when any product goes above 10%, or
+  rises more than 3 points on the week before — the 65W charger is at 33.3%,
+  up from 2.7%." In `data/alerts.json`: `scope: "any_product"`, `above: 10`,
+  `riseAbove: 3`. Not a rule for the charger alone.
+- A country's orders falling: watch every country (`each: "country"`, or a
+  `country` scope), with a floor and a drop from the week before; unless the
+  fall is store-wide, in which case watch the store.
+- A week's sales under a floor: the store's floor, and a drop against its
+  own 4-week average — a store at $9K that always ran $9K is not the problem
+the rule is for.
 - One payment made twice: the rule that catches any second charge of one
   order, not that payer.
+
+Bounds are set where they would have warned you before the damage, not at
+today's figure: a line just under what the store tolerates, a move far
+smaller than the one just seen.
 
 Narrow it to one SKU, country or customer only when that thing is special in
 a way the general rule cannot hold — a product whose normal refund rate is
