@@ -672,7 +672,7 @@ test('mark_done records the day in the handled file and drops the to-do from the
   assert.deepEqual(JSON.parse(files['data/handled.json']), [{ id: 'forever', at: '' }, { id: 'b', at: '2026-11-10', todo: row('b') }], 'entries past 60 days dropped, the id recorded once, with the to-do as it was')
   assert.deepEqual(world.state.value.cases.map(c => c.id), ['a'])
   assert.deepEqual(world.state.value.needs.map(c => c.id), ['a'])
-  assert.deepEqual(world.state.value.doneCases, [{ ...row('b'), source: '', doneNote: 'Done Nov 10' }], 'the done card is the open card, as it was')
+  assert.deepEqual(world.state.value.doneCases, [{ ...row('b'), source: '', icon: '', doneNote: 'Done Nov 10' }], 'the done card is the open card, as it was')
   assert.deepEqual(world.state.value.summary, { alertsNote: 'n', casesNote: '1 open, most urgent first', todoCount: 1, openTab: 2 })
   assert.deepEqual(await handleAction(world.$, { action: 'mark_done', context: {} }), { handled: false })
 
@@ -726,8 +726,8 @@ test('the done list shows to-dos done within DONE_DAYS, latest first, live when 
     'dispute:forever',
   ]
   assert.deepEqual(doneTodos(handled, live, '2026-11-09'), [
-    { id: 'alert:a', kind: 'alert', title: 'Refund rate jump triggered', source: 'Alert rule: Refund rate jump', detail: 'd', doneNote: 'Alert rule: Refund rate jump · Done Nov 8' },
-    { id: 'invoice:x', kind: 'overdue_invoice', title: 'Invoice X overdue 9 days', detail: 'now', source: '', doneNote: 'Done Nov 5' },
+    { id: 'alert:a', kind: 'alert', title: 'Refund rate jump triggered', source: 'Alert rule: Refund rate jump', detail: 'd', icon: '', label: '', tone: 'neutral', doneNote: 'Alert rule: Refund rate jump · Done Nov 8' },
+    { id: 'invoice:x', kind: 'overdue_invoice', title: 'Invoice X overdue 9 days', detail: 'now', source: '', icon: '', label: '', tone: 'neutral', doneNote: 'Done Nov 5' },
   ])
   assert.equal(isDone(handled, 'alert:del', '2026-11-09'), true, 'a deleted to-do stays off the open list')
   const state = deriveState({ raw, orders: storeOrders, openInvoices, handled: [{ id: 'invoice:INV2-A', at: '2026-11-10' }], errors: {}, now: NOW })
@@ -753,7 +753,7 @@ test('done to-dos fold into their own section, the card unchanged with one more 
   assert.match(board, /^todo = Column\(\[todoHead, disputeHead, disputeList, otherHead, alertTodoList, todoList, doneSectionView, alertsHead/m)
   assert.match(board, /^doneSectionView = Column\(\[doneHeadList, doneList\], "start", "stretch"\)$/m)
   assert.match(board, /^doneHeadList = Column\(_template\(\$\/data\/doneHeadRows, doneHeadRow\)\)$/m)
-  assert.match(board, /^doneToggle = Button\(doneToggleLabel, "borderless", Event\("toggle_done"\)\)$/m)
+  assert.match(board, /^doneToggle = Button\(doneTag, "borderless", Event\("toggle_done"\)\)$/m, 'a button takes one component: the label text')
   assert.match(board, /^doneList = Column\(_template\(\$\/data\/doneShown, doneCard\)\)$/m, 'the folded list is empty')
   assert.match(board, /^doneCard = Card\(doneRow\)$/m, 'the same card as an open to-do')
   assert.match(board, /^doneIcon = Text\(\$icon\)$/m, 'no green check: the card as it was')
@@ -767,9 +767,9 @@ test('the done section is folded until asked for, and its heading carries the co
   world.state.value = { cases: [], doneCases: [{ id: 'alert:a', title: 't', source: 's', detail: 'd', icon: '🔔' }], doneOpen: false }
   const toggled = await handleAction(world.$, { action: 'toggle_done' })
   assert.deepEqual(toggled, { handled: true })
-  assert.deepEqual([world.state.value.doneOpen, world.state.value.doneShown.length, world.state.value.doneHeadRows], [true, 1, [{ label: 'Done (1)', chevron: '⌄' }]])
+  assert.deepEqual([world.state.value.doneOpen, world.state.value.doneShown.length, world.state.value.doneHeadRows], [true, 1, [{ label: '⌄ Done (1)' }]])
   await handleAction(world.$, { action: 'toggle_done' })
-  assert.deepEqual([world.state.value.doneOpen, world.state.value.doneShown.length, world.state.value.doneHeadRows[0].chevron], [false, 0, '›'])
+  assert.deepEqual([world.state.value.doneOpen, world.state.value.doneShown.length, world.state.value.doneHeadRows[0].label], [false, 0, '› Done (1)'])
   assert.deepEqual(doneSection([], false).doneHeadRows, [], 'nothing done: no heading at all')
 })
 

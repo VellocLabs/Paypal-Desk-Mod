@@ -793,7 +793,12 @@ export function doneTodos(handled, live, today) {
       if (!todo) return []
       const { doneNote: _note, doneLabel: _label, ...card } = todo
       const done = `Done ${shortDate(h.at)}`
-      return [{ ...card, id: h.id, detail: card.detail || '', source: card.source || '', kind: card.kind || '', doneNote: [card.source, done].filter(Boolean).join(' · ') }]
+      // A card stored by an older build may miss what the card draws now.
+      return [{
+        ...card, id: h.id, detail: card.detail || '', source: card.source || '', kind: card.kind || '',
+        icon: card.icon || '', label: card.label || '', tone: card.tone || 'neutral',
+        doneNote: [card.source, done].filter(Boolean).join(' · '),
+      }]
     })
 }
 
@@ -808,7 +813,7 @@ export function doneSection(done, open) {
     doneOpen: Boolean(open),
     doneCases: list,
     doneShown: open ? list : [],
-    doneHeadRows: list.length ? [{ label: `Done (${list.length})`, chevron: open ? '⌄' : '›' }] : [],
+    doneHeadRows: list.length ? [{ label: `${open ? '⌄' : '›'} Done (${list.length})` }] : [],
   }
 }
 
