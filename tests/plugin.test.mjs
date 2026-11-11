@@ -12,7 +12,7 @@ import { describeCall, isWriteTool, register as registerGuard } from '../hooks/g
 import {
   DONE_DAYS, doneTodos, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
-  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, WATCH_FILE, disputeDetails, readWatch, startReview, refreshReviews, todoView, showBadge,
+  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, WATCH_FILE, alertTodos, disputeDetails, readWatch, ruleCards, startReview, refreshReviews, todoView, showBadge,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
 import { DEFAULT_RULES } from '../lib/alerts.js'
@@ -741,7 +741,8 @@ test('events carry the emoji and the rule they came from; rule cards are setting
   assert.match(board, /^todoTitle = Heading\(\$title, 3, \$source\)$/m)
   assert.match(board, /^alertsHead = Heading\("Alert rules", 2, /m)
   assert.match(board, /^ruleBody = Column\(\[ruleHeading, ruleBar\]\)$/m, 'name and condition only: no met / not met line')
-  assert.match(board, /^ruleHeading = Heading\(\$name, 3, \$condition\)$/m)
+  assert.match(board, /^ruleName = Heading\(\$name, 3, \$condition\)$/m)
+  assert.match(board, /^ruleIcon = Text\(\$icon\)$/m)
   assert.doesNotMatch(board, /Icon\("notifications"\)/)
   assert.doesNotMatch(board, /paypalAlertList|paypalCard/, 'a dispute is an event, not a card in the rules grid')
 })
@@ -878,7 +879,7 @@ test('the dispute card binds only fields a dispute to-do has, and its buttons ac
   const fields = new Set(lines.flatMap(line => [...line.matchAll(/\$([a-zA-Z]\w*)/g)].map(m => m[1])))
   for (const field of fields) assert.ok(field in todo, `the card has no ${field}`)
   const composes = lines.filter(l => l.includes('"compose"'))
-  assert.deepEqual(composes, ['disputeAsk = Button(disputeAskText, "primary", Event("compose", {quote: $discussQuote}))'], 'Ask AI only attaches the review; it drafts no words')
+  assert.deepEqual(composes, ['disputeAsk = Button(disputeAskText, "default", Event("compose", {quote: $discussQuote}))'], 'Ask AI only attaches the review; it drafts no words')
   const actions = new Set(lines.flatMap(l => [...l.matchAll(/Event\("(\w+)"/g)].map(m => m[1])))
   const local = readJson('.claude-plugin/plugin.json').templates.board.app.localActions
   // `compose` is the page's own: it fills the composer and never reaches the module or the model.
@@ -928,4 +929,29 @@ test('the dispute details draw every list line as its own text, so the lines bre
   for (let i = 1; i <= 4; i++) assert.ok(board.includes(`disputeStep${i} = Text($detailsStep${i}, "caption")`), `disputeStep${i}`)
   for (let i = 1; i <= 6; i++) assert.ok(board.includes(`disputeCheck${i} = Text($detailsCheck${i}, "caption")`), `disputeCheck${i}`)
   assert.match(board, /^disputeViewWhy = Card\(Column\(\[Heading\("Why", 3, "The facts the call rests on"\), disputeWhyLines\]/m)
+})
+
+test('a rule card carries its icon: a scale for PayPal disputes, a bell for a rule of yours', () => {
+  const alerts = [{ id: 'a', name: 'A', rule: 'r', condition: 'c', understood: true, tripped: false, subject: '', value: '', delta: '' }]
+  assert.deepEqual(ruleCards(alerts, []).map(c => [c.id, c.icon]), [['paypal-disputes', '⚖️'], ['a', '🔔']])
+})
+
+test('an alert\'s details carry the AI\'s conclusion and the rule\'s own week-by-week figure', () => {
+  const alert = { id: 'a', name: 'Refund rate jump', rule: 'r', reading: 'refund rate 7.0%', tripped: true, subject: 'Store', week: '', ask: 'why?' }
+  const finding = { id: 'f', alertId: 'a', week: '', at: '2026-11-10T09:00:00-05:00', title: 'Bad batch', conclusion: 'The charger’s batch is faulty.', action: 'Stop selling it' }
+  const series = { title: 'Refund rate (%)', note: 'week by week', series: [{ label: 'Nov 4', value: 51.5 }] }
+  const [todo] = alertTodos([alert], [finding], NOW, new Map([['a', series]]))
+  assert.deepEqual([todo.detailsTitle, todo.detailsSubtitle, todo.detailsHeadline, todo.detailsConclusion, todo.detailsAction],
+    ['Refund rate jump', 'r', 'Bad batch', 'The charger’s batch is faulty.', 'Stop selling it'])
+  assert.equal(todo.detailsSeries.length, 1)
+  assert.equal(todo.detailsChartTitle, 'Refund rate (%)')
+  const [bare] = alertTodos([alert], [], NOW)
+  assert.deepEqual([bare.detailsHeadline, bare.detailsSeries.length], ['The AI has not analyzed this yet', 0])
+})
+
+test('an alert\'s details view draws the conclusion, a curve of the rule\'s figure and what to do', () => {
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  assert.match(board, /^alertTodoDetails = Modal\(alertTodoDetailsButton, alertTodoView\)$/m)
+  assert.match(board, /^alertViewChart = Card\(Column\(\[Heading\(\$detailsChartTitle, 3, \$detailsChartNote\), LineChart\(data=\$detailsSeries/m)
+  assert.match(board, /^alertViewCall = Card\(Column\(\[Heading\("The AI's call", 3\), Text\(\$detailsHeadline, "body"\), Text\(\$detailsConclusion, "body"\)\]/m)
 })

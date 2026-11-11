@@ -14,7 +14,7 @@
  * still a handful of patches.
  */
 import { addDays, dateOf, shortDate } from './lib/dates.js'
-import { DEFAULT_RULES, checkRules, disputeAlerts } from './lib/alerts.js'
+import { DEFAULT_RULES, alertSeries, checkRules, disputeAlerts } from './lib/alerts.js'
 import { refundBreakdown } from './lib/insights.js'
 import { disputeFacts, disputesNote, flatDispute, latestReview, reviewCards, waitsOnMerchant } from './lib/disputes.js'
 import { isProduct, productTrend } from './lib/productTrend.js'
@@ -803,7 +803,13 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
   const alerts = viewAlerts(checkRules(alertRules, orders, today), findings, running)
   const paypalAlerts = disputeAlerts(disputes, now)
   const found = deriveCases({ invoices: openInvoices, disputes, transactions, inboxFiles, now })
-  const live = [...found, ...alertTodos(alerts, findings, now)]
+  const seriesOf = new Map()
+  for (const a of alerts) {
+    if (!a.tripped || !a.spec) continue
+    const series = alertSeries(a.spec, orders, today, { subject: a.subject })
+    if (series) seriesOf.set(a.id, series)
+  }
+  const live = [...found, ...alertTodos(alerts, findings, now, seriesOf)]
   const cases = openTodos(live, handled, today).map(c => withReview(c, facts, reviews))
   const errorNames = Object.keys(errors)
   const noteParts = [`Synced ${timeOfDay(now)}`]
@@ -876,11 +882,12 @@ function todoSummary(cases) {
 }
 
 /** A to-do for each tripped alert, its analysis in the detail; the id is the alert's, so done hides it for DONE_DAYS. */
-export function alertTodos(alerts, findings, now) {
+export function alertTodos(alerts, findings, now, seriesOf = new Map()) {
   return alerts.filter(a => a.tripped).map(a => {
     const finding = latestFinding(findings, a)
     // Only a conclusion is shown; while the analysis is pending or running the line stays empty.
     const analysis = finding ? `AI: ${[finding.title, finding.conclusion].filter(Boolean).join('. ')}` : ''
+    const series = seriesOf.get(a.id) || null
     return {
       id: `alert:${a.id}`,
       kind: 'alert',
@@ -893,6 +900,15 @@ export function alertTodos(alerts, findings, now) {
       since: now,
       ref: a.id,
       ask: a.ask,
+      detailsTitle: a.name,
+      detailsSubtitle: a.rule,
+      detailsHeadline: finding ? String(finding.title || '') : 'The AI has not analyzed this yet',
+      detailsConclusion: finding ? String(finding.conclusion || '') : '',
+      detailsAction: finding && finding.action ? String(finding.action) : '',
+      detailsChartTitle: series ? series.title : '',
+      detailsChartNote: series ? series.note : '',
+      detailsSeries: series ? series.series : [],
+      detailsAsk: a.ask,
     }
   })
 }
@@ -928,6 +944,7 @@ export function viewAlerts(checked, findings, running = null) {
     headline: a.headline || '',
     tripped: a.tripped,
     understood: a.understood,
+    spec: a.spec,
     ask: a.understood
       ? `The alert "${a.name}" (${a.rule}) reads ${a.reading}. What's behind it, and what should I do?`
       : `Rewrite the alert "${a.name}" in data/alerts.json so this desk can check it.`,
@@ -971,6 +988,7 @@ export function ruleCards(alerts = [], paypalAlerts = []) {
   const open = (paypalAlerts || []).filter(d => d.open).length
   const disputes = {
     id: DISPUTE_RULE_ID,
+    icon: '⚖️',
     name: 'PayPal disputes',
     condition: 'A buyer opens a dispute or a chargeback on your PayPal account.',
     met: open > 0,
@@ -982,6 +1000,7 @@ export function ruleCards(alerts = [], paypalAlerts = []) {
   }
   return [disputes, ...(alerts || []).map(a => ({
     id: a.id,
+    icon: '🔔',
     name: a.name,
     condition: a.condition || a.rule,
     met: Boolean(a.understood && a.tripped),
