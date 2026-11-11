@@ -825,7 +825,7 @@ export function doneSection(done, open) {
     doneOpen: Boolean(open),
     doneCases: list,
     doneShown: open ? list : [],
-    doneHeadRows: list.length ? [{ label: `${open ? 'v' : '>'} Done (${list.length})`, action: open ? 'Collapse' : 'Expand' }] : [],
+    doneHeadRows: list.length ? [{ label: `Done (${list.length}) ${open ? '<' : '>'}` }] : [],
   }
 }
 

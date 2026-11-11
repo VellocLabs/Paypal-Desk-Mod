@@ -753,7 +753,7 @@ test('done to-dos fold into their own section, the card unchanged with one more 
   assert.match(board, /^todo = Column\(\[todoHead, disputeHead, disputeList, otherHead, alertTodoList, todoList, doneSectionView, alertsHead/m)
   assert.match(board, /^doneSectionView = Column\(\[doneHeadList, doneList\], "start", "stretch"\)$/m)
   assert.match(board, /^doneHeadList = Column\(_template\(\$\/data\/doneHeadRows, doneHeadRow\)\)$/m)
-  assert.match(board, /^doneHeading = Heading\(\$label, 2, action=Event\("toggle_done"\), actionLabel=\$action\)$/m, 'the chevron is part of the heading text')
+  assert.match(board, /^doneToggle = Button\(doneHeading, "borderless", Event\("toggle_done"\)\)$/m, 'the whole title presses')
   assert.match(board, /^doneList = Column\(_template\(\$\/data\/doneShown, doneCard\)\)$/m, 'the folded list is empty')
   assert.match(board, /^doneCard = Card\(doneRow\)$/m, 'the same card as an open to-do')
   assert.match(board, /^doneIcon = Text\(\$icon\)$/m, 'no green check: the card as it was')
@@ -767,9 +767,9 @@ test('the done section is folded until asked for, and its heading carries the co
   world.state.value = { cases: [], doneCases: [{ id: 'alert:a', title: 't', source: 's', detail: 'd', icon: '🔔' }], doneOpen: false }
   const toggled = await handleAction(world.$, { action: 'toggle_done' })
   assert.deepEqual(toggled, { handled: true })
-  assert.deepEqual([world.state.value.doneOpen, world.state.value.doneShown.length, world.state.value.doneHeadRows], [true, 1, [{ label: 'v Done (1)', action: 'Collapse' }]])
+  assert.deepEqual([world.state.value.doneOpen, world.state.value.doneShown.length, world.state.value.doneHeadRows], [true, 1, [{ label: 'Done (1) <' }]])
   await handleAction(world.$, { action: 'toggle_done' })
-  assert.deepEqual([world.state.value.doneOpen, world.state.value.doneShown.length, world.state.value.doneHeadRows[0].label], [false, 0, '> Done (1)'])
+  assert.deepEqual([world.state.value.doneOpen, world.state.value.doneShown.length, world.state.value.doneHeadRows[0].label], [false, 0, 'Done (1) >'])
   assert.deepEqual(doneSection([], false).doneHeadRows, [], 'nothing done: no heading at all')
 })
 
