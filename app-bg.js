@@ -923,20 +923,26 @@ export function alertTodos(alerts, findings, now, seriesOf = new Map()) {
  * one not analyzed yet says so.
  */
 export const ACTS = {
-  'stop-selling': { label: 'Stop selling', tone: 'danger' },
-  refund: { label: 'Refund buyers', tone: 'warning' },
+  fix: { label: 'Fix now', tone: 'danger' },
+  adjust: { label: 'Adjust', tone: 'warning' },
   watch: { label: 'Watch it', tone: 'info' },
-  investigate: { label: 'Look closer', tone: 'neutral' },
+  check: { label: 'Look closer', tone: 'neutral' },
 }
 
+/**
+ * What the person should do about an alert, whatever its metric, as
+ * {label, tone}: the AI writes `act` in its finding; an older finding is read
+ * from its action words, and one not analyzed yet says so.
+ */
 export function actOf(finding) {
-  if (!finding) return ACTS.investigate
+  if (!finding) return ACTS.check
   const act = String(finding.act || '').toLowerCase()
   if (ACTS[act]) return ACTS[act]
   const words = `${finding.action || ''} ${finding.title || ''}`
-  if (/stop|pause|pull|halt|withdraw|recall/i.test(words)) return ACTS['stop-selling']
-  if (/refund|compensat|money back/i.test(words)) return ACTS.refund
-  return ACTS.investigate
+  if (/stop|pause|pull|halt|withdraw|recall|fix|correct|refund|compensat|money back|contact|chase/i.test(words)) return ACTS.fix
+  if (/restock|reorder|raise|lower|cut|shift|adjust|budget|price|stock|plan/i.test(words)) return ACTS.adjust
+  if (/watch|monitor|keep an eye|next week/i.test(words)) return ACTS.watch
+  return ACTS.check
 }
 
 /** A line that fits the board: one sentence, cut at `max` characters. */

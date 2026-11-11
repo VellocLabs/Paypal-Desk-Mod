@@ -336,13 +336,21 @@ zero sales with a history (`units(weeks(8)) > 0`), or a product never sold
 again would trigger it for weeks. After writing a formula rule, look at its
 card: *Can't check* gives the reason as its caption; fix the formula.
 
-`data/findings.json`, newest anywhere (the board sorts by `at`). `act` is
-the one thing the person should do about it, and the board badges the alert
-with it: `stop-selling` (pull the product or offer now, it is costing money),
-`refund` (money back to affected buyers), `watch` (nothing to do yet; the
-figure is worth a look week by week), `investigate` (not enough to decide —
-name the fact that is missing in `conclusion`). Always write one; a finding
-without it reads as `investigate`.
+`data/findings.json`, newest anywhere (the board sorts by `at`). `act` says
+what the person should do about it, whatever the alert measures, and the board
+badges the alert with one of four words:
+
+| `act` | Badge | When |
+| --- | --- | --- |
+| `fix` | Fix now | Something is wrong and a concrete step is named: a product pulled, a buyer refunded, a listing corrected, a carrier chased |
+| `adjust` | Adjust | Nothing is broken; a plan changes: restock, shift a budget, move a price, follow up a big order |
+| `watch` | Watch it | No action yet; the figure is worth the next look |
+| `check` | Look closer | Evidence does not decide it; name the missing fact in `conclusion` |
+
+The badge is never tied to the metric: a rise in sales can be `adjust` (restock
+for it) and a rise in refunds can be `fix` or `watch`. If none fits, pick the
+nearest and say in `action` what you actually mean. Always write one; a finding
+without it reads as `check`.
 
 ```json
 { "findings": [

@@ -108,22 +108,33 @@ settles it.
 ## Write what to do
 
 Every analysis ends with one `act` in its finding, which the board shows as a
-badge on the alert. Pick the strongest thing the evidence supports, not the
-most dramatic:
+badge on the alert. The four words describe the response, not the metric, so
+they fit whatever the person asked to watch:
 
-- `stop-selling` — it is costing money now: a fault rate far above the store,
-  a bad batch, the same chargeback on one SKU. Say what to pull, and from
-  when.
-- `refund` — the money goes back: a duplicate charge, a refund the buyer never
-  got, an amount small enough that contesting costs more than refunding.
-- `watch` — nothing to do this week: the figure moved and deserves the next
-  look, but no action is justified yet.
-- `investigate` — the evidence does not decide it: name the fact that would
-  (tracking, the buyer's message, another week of data).
+- `fix` — something is wrong and a concrete step is named: pull the product,
+  refund the buyer, correct the listing, chase the carrier.
+- `adjust` — nothing is broken; a plan changes because of the figure: restock,
+  shift a budget, move a price, follow up a large order, keep a campaign
+  running.
+- `watch` — no action this week; the figure is worth the next look.
+- `check` — the evidence does not decide it: name the fact that would (the
+  buyer's message, tracking, another week of data).
 
-A rise with no cause found is `watch` or `investigate`, never `stop-selling`.
+The same four answer very different alerts. A product refunded far above the
+store is `fix`, and `action` names what to pull. Sales up 30% in a week is
+`adjust`, and `action` names what to do about the demand, or `watch` if one
+week says nothing yet. A product with no orders for a week is `watch` or
+`check`, never `fix` on one quiet week.
+
+Analyze the alert's own subject. A sales alert is about what drove the rise
+and whether it holds (a campaign, a country, one product); a refund alert is
+about which orders and why; an orders alert is about which country or channel
+moved. The conclusion, the action and the reply are written for that subject —
+never a standing paragraph reused from another alert.
+
 Keep the finding's `title` to one line (about 90 characters), since the board
-cuts it there; the argument goes in `conclusion`.
+cuts it there; the argument goes in `conclusion`, and the concrete step in
+`action`.
 
 ## After an analysis, offer to watch it
 

@@ -961,16 +961,19 @@ test('an alert\'s details view draws the conclusion, a curve of the rule\'s figu
 test('an alert is badged with what to do, from the finding, and its conclusion on the card is one line', () => {
   const alert = { id: 'a', name: 'Refund rate jump', rule: 'r', reading: 'x', tripped: true, subject: 'Store', week: '', ask: 'why?' }
   const long = 'The 65W charger carries the jump: 29 of 44 refunds, 58% of its orders, all citing the same fault, so this is one product and not the store.'
-  const finding = { id: 'f', alertId: 'a', week: '', at: '2026-11-10T09:00:00-05:00', title: long, act: 'stop-selling', conclusion: 'Long argument here.', action: '' }
+  const finding = { id: 'f', alertId: 'a', week: '', at: '2026-11-10T09:00:00-05:00', title: long, act: 'fix', conclusion: 'Long argument here.', action: '' }
   const [todo] = alertTodos([alert], [finding], NOW)
-  assert.deepEqual([todo.actLabel, todo.actTone], ['Stop selling', 'danger'])
+  assert.deepEqual([todo.actLabel, todo.actTone], ['Fix now', 'danger'])
   assert.ok(todo.detail.length <= 96, todo.detail)
   assert.ok(todo.detail.endsWith('…'), 'cut with an ellipsis')
   assert.ok(!todo.detail.includes('Long argument'), 'the conclusion stays in Details')
 
-  assert.deepEqual(actOf({ action: 'Pause the 65W charger' }).label, 'Stop selling')
-  assert.deepEqual(actOf({ action: 'Give the buyers their money back' }).label, 'Refund buyers')
+  assert.deepEqual(actOf({ action: 'Pause the 65W charger' }).label, 'Fix now')
+  assert.deepEqual(actOf({ action: 'Restock it for the campaign' }).label, 'Adjust')
+  assert.deepEqual(actOf({ action: 'Nothing yet; check again next week' }).label, 'Watch it')
+  assert.deepEqual(actOf({ action: 'Give the buyers their money back' }).label, 'Fix now')
   assert.deepEqual(actOf(null), { label: 'Look closer', tone: 'neutral' })
+  assert.deepEqual(actOf({ act: 'adjust' }), { label: 'Adjust', tone: 'warning' })
 
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
   assert.ok(board.includes('alertTodoTop = Row([alertTodoIcon, alertTodoTitle, alertTodoAct], "start", "center")'))
