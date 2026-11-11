@@ -42,11 +42,13 @@ Speak of them as orders and sales, not as invoices.
 - **Review a dispute.** See *Disputes* below: the module starts a review
   run for each open dispute that waits on the merchant; no chat is
   involved.
-- **Mark a to-do done.** *Mark done* on the board moves a to-do from the
-  open list to the done list below it, for 7 days: the same card, its emoji
-  turned to ✅, "Done Nov 9" by its source, and a *⋯* menu in place of the
-  buttons; if it is still true after them, it is open again. The menu has *Undo* (open again now, as it was) and *Delete* (off the
-  board for the rest of the 7 days). The board does all three itself. When
+- **Mark a to-do done.** *Mark done* on the board moves a to-do into the
+  *Done* section at the end of the actions, folded away until the person
+  presses its chevron, for 7 days: the same card, "Done Nov 9" after its
+  source, and a *⋯* menu in place of the buttons; if it is still true after
+  them, it is open again. The menu has *Undo* (open again now, as it was) and
+  *Delete* (off the board for the rest of the 7 days). The board does all
+  three itself. When
   the person asks you to close one, add `{"id": "<its id>", "at":
   "YYYY-MM-DD"}` (today) to `data/handled.json`, a JSON array; create the
   file if missing and keep the entries in it. To reopen one, remove its
@@ -416,7 +418,8 @@ missing.
 | `groups` | The headings over the groups of to-dos: `{disputesTitle, disputesNote, otherTitle}`; a title is empty when its heading is not shown (*Other to-dos*, over the alert to-dos and the rest, shows only under the disputes) |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it) — the background module also puts the same count on the app's topbar icon with `$.app.badge` —, and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
-| `doneCases` | The done list, latest first: the open card's fields plus `doneNote` ("Alert rule: Refund rate jump · Done Nov 9") and `doneLabel` ("✓ Done Nov 9") |
+| `doneCases` | Everything done in the last 7 days, latest first: the open card's fields plus `doneNote` ("Alert rule: Refund rate jump · Done Nov 9") |
+| `doneOpen`, `doneShown`, `doneHeadRows` | The *Done* section: whether it is unfolded, the cards it shows (none while folded), and its heading row (`{label: "Done (2)", chevron: "▸"}`), empty while nothing is done |
 | `cases` | The open to-dos, most urgent first: `{id, kind, title, source, detail, tone, label, since, ref, ask}`; `title` starts with a verb, `source` is where it came from ("From alert: …"); `kind` is `dispute`, `overdue_invoice`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |
 
