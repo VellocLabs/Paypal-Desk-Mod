@@ -13,6 +13,7 @@
  *   node scripts/seed-disputes.mjs --only duplicate
  *   node scripts/seed-disputes.mjs --wallet     (buyer approves each payment by link)
  */
+import './lib/env.mjs'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

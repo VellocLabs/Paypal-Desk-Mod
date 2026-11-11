@@ -11,6 +11,8 @@
  *   node scripts/seed-sandbox.mjs --chargeback <SELLER_TRANSACTION_ID>
  */
 
+import './lib/env.mjs'
+
 const HOST = 'https://api-m.sandbox.paypal.com'
 const clientId = process.env.PAYPAL_CLIENT_ID
 const clientSecret = process.env.PAYPAL_CLIENT_SECRET

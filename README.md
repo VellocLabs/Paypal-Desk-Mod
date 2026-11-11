@@ -106,8 +106,13 @@ model, the background runtime, the confirmation gate, the dashboard).
 
 A fresh sandbox account has nothing to show.
 
+The seeding scripts need a sandbox REST app's credentials. Copy
+`.env.example` to `.env` and fill in both, from developer.paypal.com >
+Apps & Credentials > Sandbox > your app. `.env` is gitignored, and every
+script below reads it, so no shell variables are needed.
+
 ```bash
-PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed
+npm run seed
 ```
 
 The script creates four sent invoices (two overdue), a product and a

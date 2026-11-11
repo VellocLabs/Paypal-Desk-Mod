@@ -21,6 +21,7 @@
  * default seeds the newest day first), --dry-run (print the
  * plan and one request body, call nothing).
  */
+import './lib/env.mjs'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
