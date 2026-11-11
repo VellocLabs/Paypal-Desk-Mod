@@ -220,6 +220,13 @@ as `alertId` and its `week`; the event then carries the
 conclusion. A run the module started has no one to confirm anything: read,
 write the finding, and change nothing on PayPal.
 
+**Offer to watch it.** When the analysis found something worth knowing
+next time — a product refunded far above the store, a payment made twice, a
+week that fell — end the reply with the one-sentence offer the
+`paypal-rules` skill's *After an analysis* section describes, naming the
+figure and the rule it would become. A run the module started cannot ask:
+there, write the finding only.
+
 **Edit.** *Edit* on a card writes `Change the alert "<name>" (id: <id>,
 now <rule>): ` into the chat box, and the person types the change. Change
 that entry in place and keep its `id`, so its findings and done mark stay

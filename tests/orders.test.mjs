@@ -7,16 +7,16 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { CATALOG, COUNTRIES } from '../lib/catalog.js'
 import {
-  addDays, dayCounts, dayRange, defaultTotal, generateOrders, invoiceBody, makeOrder, orderMemo,
+  addDays, dayCounts, dayRange, defaultTotal, generateOrders, invoiceBody, launchOrders, makeOrder, orderMemo,
   parseOrderMemo, paymentBody, seedingQueue, summarizeOrders,
 } from '../scripts/lib/orders.mjs'
 
 const LAST = '2026-11-07'
 const full = generateOrders()
 
-test('the catalog has 33 distinct products and the country shares add up to 100', () => {
-  assert.equal(CATALOG.length, 33)
-  assert.equal(new Set(CATALOG.map(p => p.sku)).size, 33)
+test('the catalog has 34 distinct products and the country shares add up to 100', () => {
+  assert.equal(CATALOG.length, 34)
+  assert.equal(new Set(CATALOG.map(p => p.sku)).size, 34)
   assert.equal(COUNTRIES.reduce((sum, c) => sum + c.share, 0), 100)
 })
 
@@ -150,4 +150,23 @@ test('seeding goes newest day first, each day in number order, every order once'
     assert.ok(a.date > b.date || (a.date === b.date && a.number < b.number), `${a.number} then ${b.number}`)
   }
   assert.equal(seedingQueue(full, { oldestFirst: true })[0].number, 'PD-20261001-001')
+})
+
+test('the launched lamp sells two or three orders a week for three weeks, then none', () => {
+  const orders = launchOrders()
+  assert.equal(orders.length, 8)
+  for (const o of orders) {
+    assert.deepEqual(o.lines.map(l => [l.sku, l.qty]), [['DSK-LAMP', 1]], o.number)
+    assert.equal(o.refund, null, 'a launch order is never refunded')
+    assert.equal(o.totalCents, 4900)
+  }
+  const weeks = [['2026-10-14', '2026-10-20'], ['2026-10-21', '2026-10-27'], ['2026-10-28', '2026-11-03'], ['2026-11-04', '2026-11-10']]
+  assert.deepEqual(weeks.map(([a, b]) => orders.filter(o => o.date >= a && o.date <= b).length), [3, 2, 3, 0])
+})
+
+test('a normal order keeps its content: the launched SKU is never drawn', () => {
+  assert.equal(makeOrder('PD-20261110-001', '2026-11-10').lines[0].sku, 'PWR-10K')
+  for (const o of generateOrders({ from: '2026-10-14', to: '2026-11-10', total: 60 })) {
+    assert.ok(o.lines.every(l => l.sku !== 'DSK-LAMP'), o.number)
+  }
 })

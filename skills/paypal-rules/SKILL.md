@@ -105,6 +105,26 @@ settles it.
   (a price or quantity change) before a cancellation when the buyer asked for
   a change, not an end.
 
+## After an analysis, offer to watch it
+
+When an analysis turns up something the store would want told about next
+time, the reply ends with one offer to watch it: the figure, and the rule it
+would become. A conclusion on its own leaves the person to notice the next
+one alone.
+
+- A product refunded at 8% or more of its orders, or at twice the store's
+  rate: "Shall I watch the 65W charger? I would alert you when its weekly
+  refund rate goes above 10%."
+- A store refund rate that rose: offer the rule behind the rise, or the
+  product that carries it.
+- One payment made twice, a country's orders down by a quarter week over
+  week, a week's sales under a floor: offer that rule.
+
+Offer once per finding, never on every answer, and one rule at a time unless
+both follow from the same finding. When the person says yes, write the rule
+into `data/alerts.json`, keeping the rules already there, then say what
+figure it reads now and whether it is met.
+
 ## Reporting
 
 - `list_transactions` lists at most 31 days a call and lags up to three

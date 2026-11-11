@@ -12,8 +12,9 @@
  *   node scripts/seed-orders.mjs --dry-run
  *   node scripts/seed-orders.mjs --from 2026-09-25 --to 2026-09-25 --orders 10
  *   node scripts/seed-orders.mjs                 (2,500 orders, 2026-10-01 … 2026-11-07)
+ *   node scripts/seed-orders.mjs --launch        (the launched product's own orders)
  *
- * Options: --from, --to (YYYY-MM-DD), --orders N (default: 2,500 spread pro
+ * Options: --launch (seed only the launched product's orders), --from, --to (YYYY-MM-DD), --orders N (default: 2,500 spread pro
  * rata over the range), --refund-rate R (base rate, default 0.03), --workers N
  * (orders in flight at once, default 6), --rpm N (ceiling on requests a
  * minute across all workers, default 150; it drops by itself on a 429),
@@ -28,7 +29,7 @@ import { fileURLToPath } from 'node:url'
 import { CALENDAR, CATALOG } from '../lib/catalog.js'
 import { dateOf } from '../lib/dates.js'
 import {
-  DEFAULT_FROM, DEFAULT_REFUND_RATE, DEFAULT_TO, dayRange, generateOrders, invoiceBody, isDate,
+  DEFAULT_FROM, DEFAULT_REFUND_RATE, DEFAULT_TO, dayRange, generateOrders, invoiceBody, isDate, launchOrders,
   paymentBody, seedingQueue, summarizeOrders,
 } from './lib/orders.mjs'
 import { ApiError, createClient } from './lib/rest.mjs'
@@ -38,10 +39,12 @@ const journalPath = join(root, '.seed', 'journal.json')
 
 const args = parseArgs(process.argv.slice(2))
 const today = dateOf(Date.now())
-const from = args.from ?? DEFAULT_FROM
-const to = args.to ?? DEFAULT_TO
-if (!isDate(from) || !isDate(to) || from > to) fail(`--from/--to must be dates with from <= to (got ${from} … ${to}).`)
-if (to > today) fail(`--to ${to} is in the future; recorded payments cannot be.`)
+let from = args.from ?? DEFAULT_FROM
+let to = args.to ?? DEFAULT_TO
+if (!args.launch) {
+  if (!isDate(from) || !isDate(to) || from > to) fail(`--from/--to must be dates with from <= to (got ${from} … ${to}).`)
+  if (to > today) fail(`--to ${to} is in the future; recorded payments cannot be.`)
+}
 const total = args.orders === undefined ? undefined : Number(args.orders)
 if (total !== undefined && !(Number.isInteger(total) && total > 0)) fail('--orders must be a positive whole number.')
 const refundRate = args['refund-rate'] === undefined ? DEFAULT_REFUND_RATE : Number(args['refund-rate'])
@@ -50,7 +53,11 @@ const workers = args.workers === undefined ? 6 : Number(args.workers)
 if (!(rpm > 0) || !(Number.isInteger(workers) && workers > 0)) fail('--rpm and --workers must be positive numbers.')
 const method = args.method ?? 'PAYPAL'
 
-const orders = generateOrders({ from, to, total, refundRate })
+const orders = args.launch ? launchOrders() : generateOrders({ from, to, total, refundRate })
+if (args.launch && orders.length) {
+  from = orders[0].date
+  to = orders[orders.length - 1].date
+}
 const plan = summarizeOrders(orders)
 printPlan(plan)
 
@@ -211,7 +218,7 @@ function parseArgs(list) {
   const out = {}
   for (let i = 0; i < list.length; i++) {
     const key = list[i].replace(/^--/, '')
-    if (key === 'dry-run' || key === 'oldest-first') out[key] = true
+    if (key === 'dry-run' || key === 'oldest-first' || key === 'launch') out[key] = true
     else out[key] = list[++i]
   }
   return out

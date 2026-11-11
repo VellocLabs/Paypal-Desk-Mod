@@ -8,10 +8,10 @@
  */
 import { addDays, dayRange, isDate } from '../../lib/dates.js'
 import { orderMemo, parseOrderMemo } from '../../lib/memo.js'
-import { DEFAULT_REFUND_RATE, eventsOn, makeOrder, orderNumber, productWeights, rng } from '../../lib/orders.js'
+import { DEFAULT_REFUND_RATE, eventsOn, launchOrders, makeOrder, orderNumber, productWeights, rng } from '../../lib/orders.js'
 
 export { addDays, dayRange, isDate, orderMemo, parseOrderMemo }
-export { DEFAULT_REFUND_RATE, eventsOn, makeOrder, orderNumber, productWeights, rng }
+export { DEFAULT_REFUND_RATE, eventsOn, launchOrders, makeOrder, orderNumber, productWeights, rng }
 
 export const DEFAULT_FROM = '2026-10-01'
 export const DEFAULT_TO = '2026-11-07'
