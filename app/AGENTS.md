@@ -348,9 +348,11 @@ badges the alert with one of four words:
 | `check` | Look closer | Evidence does not decide it; name the missing fact in `conclusion` |
 
 The badge is never tied to the metric: a rise in sales can be `adjust` (restock
-for it) and a rise in refunds can be `fix` or `watch`. If none fits, pick the
-nearest and say in `action` what you actually mean. Always write one; a finding
-without it reads as `check`.
+for it) and a rise in refunds can be `fix` or `watch`. These four are defaults,
+not a closed list: when none of them says what you mean, write your own `act`
+in two or three words (`email-the-buyers`, `raise-the-price`) and the board
+badges it as written. Always write one; a finding without `act` is read from
+its `action` words, and one with neither reads as `check`.
 
 ```json
 { "findings": [

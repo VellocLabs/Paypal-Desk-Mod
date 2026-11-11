@@ -974,6 +974,7 @@ test('an alert is badged with what to do, from the finding, and its conclusion o
   assert.deepEqual(actOf({ action: 'Give the buyers their money back' }).label, 'Fix now')
   assert.deepEqual(actOf(null), { label: 'Look closer', tone: 'neutral' })
   assert.deepEqual(actOf({ act: 'adjust' }), { label: 'Adjust', tone: 'warning' })
+  assert.deepEqual(actOf({ act: 'email-the-buyers' }), { label: 'Email the buyers', tone: 'neutral' }, "a word of the AI's own is badged as written")
 
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
   assert.ok(board.includes('alertTodoTop = Row([alertTodoIcon, alertTodoTitle, alertTodoAct], "start", "center")'))

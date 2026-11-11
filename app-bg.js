@@ -936,8 +936,14 @@ export const ACTS = {
  */
 export function actOf(finding) {
   if (!finding) return ACTS.check
-  const act = String(finding.act || '').toLowerCase()
+  const act = String(finding.act || '').trim().toLowerCase()
   if (ACTS[act]) return ACTS[act]
+  // A word of the AI's own: "email-the-buyers" reads as "Email the buyers".
+  if (act) {
+    const words = act.replace(/[-_]+/g, ' ').trim()
+    const label = words.charAt(0).toUpperCase() + words.slice(1)
+    return { label: label.length <= 24 ? label : `${label.slice(0, 23)}…`, tone: 'neutral' }
+  }
   const words = `${finding.action || ''} ${finding.title || ''}`
   if (/stop|pause|pull|halt|withdraw|recall|fix|correct|refund|compensat|money back|contact|chase/i.test(words)) return ACTS.fix
   if (/restock|reorder|raise|lower|cut|shift|adjust|budget|price|stock|plan/i.test(words)) return ACTS.adjust

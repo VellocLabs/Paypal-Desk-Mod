@@ -120,6 +120,11 @@ they fit whatever the person asked to watch:
 - `check` — the evidence does not decide it: name the fact that would (the
   buyer's message, tracking, another week of data).
 
+Those four are the defaults, not the whole list. When none of them says the
+thing to do, put your own two or three words in `act` (`email-the-buyers`,
+`raise-the-price`, `pause-the-ads`) and the board badges it as written — with
+`action` still naming the concrete step.
+
 The same four answer very different alerts. A product refunded far above the
 store is `fix`, and `action` names what to pull. Sales up 30% in a week is
 `adjust`, and `action` names what to do about the demand, or `watch` if one
