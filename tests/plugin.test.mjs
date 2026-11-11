@@ -33,7 +33,7 @@ test('the manifest declares the app, its background module and the inbox folder'
   assert.ok(existsSync(join(root, app.seed, app.data)))
   assert.ok(existsSync(join(root, app.background.module)))
   assert.ok(app.background.fs.read.every(folder => folder.startsWith('~/')))
-  assert.deepEqual(app.localActions, ['dismiss_finding', 'mark_done', 'undo_done', 'delete_todo', 'review_dispute', 'open_details'])
+  assert.deepEqual(app.localActions, ['dismiss_finding', 'mark_done', 'undo_done', 'delete_todo', 'review_dispute', 'open_details', 'toggle_done'])
 })
 
 test('the hooks file names a module inside hooks/, and the server is the one the template scopes to', () => {
@@ -993,4 +993,21 @@ test('an alert is badged with what to do, from the finding, and its conclusion o
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
   assert.ok(board.includes('alertTodoTop = Row([alertTodoIcon, alertTodoTitle, alertTodoAct], "start", "start")'), 'the badge sits on the title line, right of it')
   assert.ok(board.includes('alertTodoAct = Badge($actLabel, $actTone)'))
+})
+
+test('every action the module answers is declared local, so a press never turns into an agent run', () => {
+  const manifest = readJson('.claude-plugin/plugin.json')
+  const declared = new Set(manifest.templates.board.app.localActions)
+  const source = readFileSync(join(root, 'app-bg.js'), 'utf8')
+  const answered = new Set([...source.matchAll(/e\.action === '([a-z_]+)'/g)].map(m => m[1]))
+  for (const [, names] of source.matchAll(/const TODO_ACTIONS = \{([^}]*)\}/g)) {
+    for (const [, name] of names.matchAll(/([a-z_]+):/g)) answered.add(name)
+  }
+  assert.ok(answered.size >= 6, [...answered].join(','))
+  for (const action of answered) assert.ok(declared.has(action), `${action} must be in localActions`)
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  for (const [, action] of board.matchAll(/Event\("([a-z_]+)"/g)) {
+    if (action === 'compose') continue
+    assert.ok(declared.has(action), `${action} is pressed on the board but not declared local`)
+  }
 })
