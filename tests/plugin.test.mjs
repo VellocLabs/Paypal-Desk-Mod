@@ -147,7 +147,7 @@ test('deriveState turns the reads into the sales board and cases, most urgent fi
   assert.equal(state.cases[3].tone, 'warning')
   assert.equal(state.cases[4].title, 'Refund rate rose to 30.0% (+30.0 pts)')
   assert.deepEqual(state.cases.map(c => c.source), ['Alert rule: PayPal disputes', 'From PayPal: unpaid invoices', 'From PayPal: recent transactions', 'From PayPal: unpaid invoices', 'Alert rule: Refund rate jump', 'From the inbox folder'])
-  assert.deepEqual(state.cases.map(c => c.icon), ['🔔', '🧾', '💳', '🧾', '🔔', '📥'])
+  assert.deepEqual(state.cases.map(c => c.icon), ['⚖️', '🧾', '💳', '🧾', '🔔', '📥'])
   assert.equal(state.cases[4].detail, '', 'no line while the analysis is pending')
   assert.deepEqual(state.ruleCards.map(c => [c.id, c.status, c.statusLine]), [
     ['paypal-disputes', 'Met now', '1 open now · built in'],
@@ -736,7 +736,8 @@ test('the done list shows to-dos done within DONE_DAYS, latest first, live when 
 test('events carry the emoji and the rule they came from; rule cards are settings with no bell or big figure', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
   assert.match(board, /^todoTop = Row\(\[todoIcon, todoTitle, todoBadge\]/m)
-  assert.match(board, /^todoIcon = Text\(\$icon\)$/m)
+  assert.match(board, /^disputeTop = Row\(\[disputeIcon, disputeTitle, disputeVerdictBadge\], "start", "center"\)$/m)
+  assert.match(board, /^disputeIcon = Text\(\$icon\)$/m, 'a dispute is marked with its own icon, as an alert is with a bell')
   assert.match(board, /^todoTitle = Heading\(\$title, 3, \$source\)$/m)
   assert.match(board, /^alertsHead = Heading\("Alert rules", 2, /m)
   assert.match(board, /^ruleBody = Column\(\[ruleHeading, ruleBar\]\)$/m, 'name and condition only: no met / not met line')
@@ -897,6 +898,6 @@ test('alert to-dos have no badge and share the Other to-dos heading, shown under
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
   const card = board.split('\n').filter(l => /^alertTodo[A-Z]\w* = /.test(l))
   assert.ok(card.length && !card.some(l => l.includes('Badge(')), 'an alert to-do has no badge')
-  assert.match(board, /^disputeTop = Row\(\[disputeTitle, disputeVerdictBadge\]/m)
+  assert.match(board, /^disputeTop = Row\(\[disputeIcon, disputeTitle, disputeVerdictBadge\]/m)
   assert.match(board, /^disputeButtons = Row\(\[disputeDetails, disputeAsk, disputeDone\]/m)
 })

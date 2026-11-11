@@ -1091,7 +1091,7 @@ export function deriveCases({ invoices, disputes, transactions, inboxFiles, now 
       kind: 'dispute',
       title: `Dispute ${d.id}: ${d.reason || d.stage || 'open'}`,
       source: 'Alert rule: PayPal disputes',
-      icon: '🔔',
+      icon: '⚖️',
       detail: `${d.amount} in dispute${d.transactionId ? ` on transaction ${d.transactionId}` : ''}. ` +
         (daysLeft === null ? 'No response deadline given.' : daysLeft <= 0 ? 'Response overdue.' : `Respond within ${daysLeft} day(s).`),
       tone: daysLeft !== null && daysLeft <= 3 ? 'danger' : 'warning',
