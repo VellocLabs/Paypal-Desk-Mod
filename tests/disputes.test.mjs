@@ -182,3 +182,14 @@ test('a dispute that names a payment\'s parent reference still finds it, and the
   assert.equal(f.lean.verdict, 'refund')
   assert.ok(f.checks.some(c => c.text === 'Payment 1S094158DA563235F ($69.00) found, with no store order behind it'))
 })
+
+test('each reason, step and check is its own line slot: the board draws a text\'s newlines as spaces', () => {
+  const f = disputeFacts(dispute(), { transactions: [sale('TX-1', 0), sale('TX-2', 3)], now: NOW })
+  const review = { disputeId: 'PP-D-1', at: day(0), verdict: 'refund', confidence: 'high', headline: 'h',
+    reasons: ['one', 'two', 'three'], steps: ['first', 'second'], reply: 'r' }
+  const [card] = reviewCards([f], [review], '')
+  assert.deepEqual([card.detailsWhy1, card.detailsWhy2, card.detailsWhy3, card.detailsWhy4], ['• one', '• two', '• three', ''])
+  assert.deepEqual([card.detailsStep1, card.detailsStep2, card.detailsStep3], ['• first', '• second', ''])
+  assert.match(card.detailsCheck1, /^• /)
+  assert.equal(card.detailsCheck6, '', 'more slots than checks are empty strings')
+})

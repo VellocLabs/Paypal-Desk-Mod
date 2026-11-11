@@ -921,3 +921,11 @@ test('data/watch.json names the product whose tab was asked for, and a sync publ
   await syncOnce(world.$, { inbox: null, now: NOW })
   assert.equal(world.state.value.productTrend, undefined, 'the tab goes when the file names nothing')
 })
+
+test('the dispute details draw every list line as its own text, so the lines break', () => {
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  for (let i = 1; i <= 4; i++) assert.ok(board.includes(`disputeWhy${i} = Text($detailsWhy${i}, "caption")`), `disputeWhy${i}`)
+  for (let i = 1; i <= 4; i++) assert.ok(board.includes(`disputeStep${i} = Text($detailsStep${i}, "caption")`), `disputeStep${i}`)
+  for (let i = 1; i <= 6; i++) assert.ok(board.includes(`disputeCheck${i} = Text($detailsCheck${i}, "caption")`), `disputeCheck${i}`)
+  assert.match(board, /^disputeViewWhy = Card\(Column\(\[Heading\("Why", 3, "The facts the call rests on"\), disputeWhyLines\]/m)
+})
