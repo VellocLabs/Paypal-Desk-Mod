@@ -42,6 +42,11 @@ Speak of them as orders and sales, not as invoices.
 - **Review a dispute.** See *Disputes* below: the module starts a review
   run for each open dispute that waits on the merchant; no chat is
   involved.
+- **When the desk is signed out.** The board is one card: *Sign in to PayPal*,
+  with a button that drafts the request into the chat. Every list is empty and
+  the icon carries no count, on purpose. Do not add a board for that state and
+  do not clear the gate; a press on the icon starts PayPal's own sign-in, and
+  the board comes back by itself when it finishes.
 - **Mark a to-do done.** *Mark done* on the board moves a to-do into the
   *Done* section at the end of the actions, folded away until the person
   presses its title, for 7 days: the same card, "Done Nov 9" after its
@@ -422,6 +427,7 @@ missing.
 | `doneOpen`, `doneShown`, `doneHeadRows` | The *Done* section: whether it is unfolded, the cards it shows (none while folded), and its heading row (`{label: "Done (2) >"}`, `{label: "Done (2) <"}` unfolded), empty while nothing is done |
 | `cases` | The open to-dos, most urgent first: `{id, kind, title, source, detail, tone, label, since, ref, ask}`; `title` starts with a verb, `source` is where it came from ("From alert: …"); `kind` is `dispute`, `overdue_invoice`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |
+| `signedIn`, `loading`, `gateRows` | Whether PayPal answered, whether the first read is still running, and the sign-in card the board shows (`{title, text, button}`), empty once it is signed in |
 
 Both windows end yesterday (this machine's local day): today's orders appear in `week.latest`
 but in no total until tomorrow.
