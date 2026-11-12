@@ -1157,6 +1157,17 @@ export function viewFindings(findings) {
 
 /** The board as it was, for a sync that could not reach PayPal: every tab keeps its last figures. */
 /**
+ * The press menu's labels, in the person's own language: the host picks one
+ * from this map by the page's locale, falling back to English.
+ */
+export const LABELS = {
+  open: { en: 'Open the desk', 'zh-CN': '打开工作台' },
+  refresh: { en: 'Refresh now', 'zh-CN': '立即刷新' },
+  signIn: { en: 'Sign in to PayPal…', 'zh-CN': '登录 PayPal…' },
+  signOut: { en: 'Sign out of PayPal', 'zh-CN': '退出 PayPal 登录' },
+}
+
+/**
  * What a press on the desk's topbar icon asks for, as the host reads it: a
  * sign-in first when the server is waiting for one, the app when it is not,
  * and on the context press a short menu, whose items come back as `menu`
@@ -1171,13 +1182,13 @@ export async function answerPress(e, phase = paypalPhase) {
     return {
       menu: signedIn
         ? [
-          { id: 'open', label: 'Open the desk' },
-          { id: 'refresh', label: 'Refresh now' },
-          { id: 'sign-out', label: 'Sign out of PayPal' },
+          { id: 'open', label: LABELS.open },
+          { id: 'refresh', label: LABELS.refresh },
+          { id: 'sign-out', label: LABELS.signOut },
         ]
         : [
-          { id: 'sign-in', label: 'Sign in to PayPal…', disabled: !due },
-          { id: 'open', label: 'Open the desk' },
+          { id: 'sign-in', label: LABELS.signIn, disabled: !due },
+          { id: 'open', label: LABELS.open },
         ],
     }
   }

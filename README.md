@@ -47,12 +47,14 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   made, with its refunds as PayPal's Transaction Search lists them.
 - **Actions**: first the action list: open disputes with their response
   deadline, overdue invoices, two payments that look like one, a new
-  request file in the inbox folder, and every alert rule that is met. Each
-  is an event: an emoji, what happened with the figure ("Refund rate rose
-  to 6.4%"), the rule it came from and the AI's conclusion. *Ask AI* drafts
-  a question about one in the chat box; *Mark done* keeps the card as it
-  is for 7 days, with a ✅ in place of its emoji, and it opens again if it is still true; its ⋯
-  menu, in place of the buttons, can undo it or delete it.
+  request file in the inbox folder, and every alert rule that is met. A
+  dispute's card carries the AI's verdict; an alert's carries a badge saying
+  what to do about it — *Fix now*, *Adjust*, *Watch it*, *Look closer*, or the
+  AI's own words — and one line of its conclusion. *Details* opens what the AI
+  found: the argument, the evidence behind it, and, for an alert, a curve of
+  that rule's own figure week by week. *Ask AI* drafts a question in the chat
+  box; *Mark done* moves the card into the *Done* section, folded away at the
+  end of the list behind its own title, where a *⋯* menu undoes or deletes it.
   Below it, the alert rules, as settings: the built-in PayPal disputes
   rule, and the rules you set by asking the AI (a product's refund rate
   above 10%, weekly sales under a floor, a country's orders dropping), each
@@ -63,6 +65,15 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   cannot say (no sales two weeks running, a week under its 4-week average)
   the AI writes a formula, which the desk reads itself (`lib/formula.js`);
   no alert runs code.
+- **Signing in** (`app.press`, `mcp.status`): a press on the desk's icon is
+  offered to the plugin first. Signed out, it starts PayPal's own sign-in and
+  opens the desk when it finishes; signed in, it opens. A context press offers
+  *Open the desk*, *Refresh now* and *Sign out of PayPal*. While PayPal does
+  not answer, the board is one sign-in card and the icon carries no count.
+- **A product's own tab** (`lib/productTrend.js`): ask for one product's
+  figures and the agent writes `data/watch.json`; the module publishes
+  `productTrend`, that product's last 7 to 90 days a day, and the agent adds
+  the tab that draws it.
 - **Dispute review** (`lib/disputes.js`): for each open dispute that waits
   on you, the desk checks what it can on its own: the deadline, the order
   behind the payment, a second charge, a refund already made, the
@@ -90,7 +101,9 @@ model, the background runtime, the confirmation gate, the dashboard).
 ## Install
 
 1. Velloc on the **beta** channel (About → channel). Apps are a beta
-   feature.
+   feature, and the desk uses two of their newer hooks — a press on its icon
+   reaching the plugin (`app.press`) and the runtime reporting each server's
+   sign-in phase (`mcp.status`) — so it needs a beta build that has them.
 2. Link this folder as a plugin and restart Velloc:
    - Windows: `mklink /J %USERPROFILE%\.velloc\plugins\paypal-desk D:\path\to\paypal-desk`
    - macOS/Linux: `ln -s /path/to/paypal-desk ~/.velloc/plugins/paypal-desk`

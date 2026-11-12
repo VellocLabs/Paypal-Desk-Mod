@@ -44,7 +44,7 @@ Speak of them as orders and sales, not as invoices.
   involved.
 - **Mark a to-do done.** *Mark done* on the board moves a to-do into the
   *Done* section at the end of the actions, folded away until the person
-  presses its chevron, for 7 days: the same card, "Done Nov 9" after its
+  presses its title, for 7 days: the same card, "Done Nov 9" after its
   source, and a *⋯* menu in place of the buttons; if it is still true after
   them, it is open again. The menu has *Undo* (open again now, as it was) and
   *Delete* (off the board for the rest of the 7 days). The board does all
@@ -419,7 +419,7 @@ missing.
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |
 | `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it) — the background module also puts the same count on the app's topbar icon with `$.app.badge` —, and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
 | `doneCases` | Everything done in the last 7 days, latest first: the open card's fields plus `doneNote` ("Alert rule: Refund rate jump · Done Nov 9") |
-| `doneOpen`, `doneShown`, `doneHeadRows` | The *Done* section: whether it is unfolded, the cards it shows (none while folded), and its heading row (`{label: "Done (2)", chevron: "▸"}`), empty while nothing is done |
+| `doneOpen`, `doneShown`, `doneHeadRows` | The *Done* section: whether it is unfolded, the cards it shows (none while folded), and its heading row (`{label: "Done (2) >"}`, `{label: "Done (2) <"}` unfolded), empty while nothing is done |
 | `cases` | The open to-dos, most urgent first: `{id, kind, title, source, detail, tone, label, since, ref, ask}`; `title` starts with a verb, `source` is where it came from ("From alert: …"); `kind` is `dispute`, `overdue_invoice`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |
 
