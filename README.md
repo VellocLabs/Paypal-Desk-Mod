@@ -1,263 +1,134 @@
 # PayPal Desk
 
-A resident desk for PayPal merchants, built as a plugin for
-[Velloc](https://velloc.app), an AI coding agent in the same family as the
-terminal and IDE coding agents. Install the plugin and your PayPal account
-is watched in the background: your store's sales by day, country and
-product, refunds, overdue invoices and open disputes as live figures, each thing that needs a decision as a case, and an
-agent that works the case with PayPal's own tools and asks you before it
-changes anything.
+**An AI back office for PayPal merchants that learns, and whose UI the AI
+writes.** Every problem the agent solves becomes a rule the desk checks by
+itself next time, and every view you ask for becomes part of the app.
 
-Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
+Built on the **mod app framework of [Velloc Code](https://velloc.app)**, an
+AI coding agent. **This repository is the project's entry point.**
 
-## What it does
+▶ **Demo video:** https://youtu.be/EoIc2DwLSrM
 
-```
- PayPal MCP server ──▶ background module (resident, every 5 min)
- (sandbox, OAuth)      │ reads invoices, disputes, transactions
-                       │ derives the sales board and the to-dos
-                       ▼
-                 app state  ──▶ dashboard (live, partial re-render)
-                       ▲              │ "Ask AI" on a to-do
-                       │              ▼
-   ~/Documents/paypal-desk/inbox   session agent ──▶ PayPal MCP tools
-   (declared folder, consented)        │ every write is confirmed by you
-                                       ▼
-                                 data/handled.json
-```
+![The PayPal Desk dashboard: the week's net sales, orders, order value and refunds, sales by country, daily sales, top products and the latest orders](docs/images/overview.png)
 
-- **Background module** (`app-bg.js`): one worker that lives as long as
-  Velloc runs, with or without the dashboard open. It only reads PayPal.
-- **Dashboard** (`app/app.a2ui`): *Overview* shows the last 7 days: net sales,
-  orders, average order value and refunds against the week before, sales by
-  country, daily sales, top products and the latest orders. *Trends* draws
-  the last 4 weeks as line charts: net sales, orders, order value, refund
-  rate and sales by country, with the products that moved most.
-  *Actions* lists what needs you, with a red count on its tab, and the desk
-  opens on it while anything is open. The agent can reshape it on request ("show refunds by
-  week") by editing the file and rebuilding.
-- **Store orders**: an order is a paid invoice numbered `PD-YYYYMMDD-NNN`.
-  PayPal gives its amount, status and day; the store's order book
-  (`lib/orders.js`) gives the buyer, country, products and any refund, which
-  follow from the number alone, since PayPal's MCP invoice list returns a
-  flat row with no memo, items or recipient. The module keeps 62 days of
-  orders in its store, reads only the newest pages on each sync and every
-  page once an hour (`lib/sales.js` does the figures). A direct payment
-  whose invoice id is such a number is an order too, on the day it was
-  made, with its refunds as PayPal's Transaction Search lists them.
-- **Actions**: first the action list: open disputes with their response
-  deadline, overdue invoices, two payments that look like one, a new
-  request file in the inbox folder, and every alert rule that is met. A
-  dispute's card carries the AI's verdict; an alert's carries a badge saying
-  what to do about it — *Fix now*, *Adjust*, *Watch it*, *Look closer*, or the
-  AI's own words — and one line of its conclusion. *Details* opens what the AI
-  found: the argument, the evidence behind it, and, for an alert, a curve of
-  that rule's own figure week by week. *Ask AI* drafts a question in the chat
-  box; *Mark done* moves the card into the *Done* section, folded away at the
-  end of the list behind its own title, where a *⋯* menu undoes or deletes it.
-  Below it, the alert rules, as settings: the built-in PayPal disputes
-  rule, and the rules you set by asking the AI (a product's refund rate
-  above 10%, weekly sales under a floor, a country's orders dropping), each
-  with its condition in words; the dashed plus
-  card at the end of the grid drafts a new one. A met rule is analyzed by
-  the AI
-  on its own (`lib/alerts.js` checks the rules). For what a plain rule
-  cannot say (no sales two weeks running, a week under its 4-week average)
-  the AI writes a formula, which the desk reads itself (`lib/formula.js`);
-  no alert runs code.
-- **Signing in** (`app.press`, `mcp.status`, `$.app.view`): a press on the
-  desk's icon is offered to the plugin first. Signed out, it starts PayPal's own
-  sign-in, the icon shows it is working, and the desk opens by itself once the
-  account has been read. Signed in, it opens. Signing out closes the pane with
-  the account. A context press offers *Open the desk*, *Refresh now* and *Sign
-  out of PayPal*. The board behind a closed pane is one sign-in card, and the
-  icon carries no count.
-- **A product's own tab** (`lib/productTrend.js`): ask for one product's
-  figures and the agent writes `data/watch.json`; the module publishes
-  `productTrend`, that product's last 7 to 90 days a day, and the agent adds
-  the tab that draws it.
-- **Dispute review** (`lib/disputes.js`): for each open dispute that waits
-  on you, the desk checks what it can on its own: the deadline, the order
-  behind the payment, a second charge, a refund already made, the
-  product's refund rate against the store's, the buyer's history and seller
-  protection, and what its rules lean to. Then the AI reviews it in the
-  background, with the `paypal-rules` skill, and the dispute's card says
-  the verdict in one line: *Agree to refund*, *Contest it* or *Needs
-  checking*, with its reason. *Details* opens why, the next steps, what
-  was checked and a reply draft for the Resolution Center; *Ask AI* opens
-  the chat with the review attached as a quote, for your follow-up question. It never changes anything on PayPal on its own.
-- **Confirmation** (`hooks/guard.js`): a PayPal tool that creates, sends,
-  refunds, cancels or accepts anything opens a confirmation dialog, whatever
-  the session's permission mode. Reads pass.
-- **Inbox folder**: the plugin declares `~/Documents/paypal-desk/inbox`
-  read-only. You approve it when you turn the plugin on. Drop a CSV or a
-  text request there and a case appears; the agent drafts the invoice and
-  sends it only when you confirm.
-- **Rules** (`skills/paypal-rules/SKILL.md`): what a careful merchant does
-  about disputes, invoices, refunds and subscriptions, and which tool does
-  what.
+> **A PayPal AI Hackathon 2026 project.** It talks to the PayPal
+> **sandbox** only, and is a practice and demo project, not a product for a
+> live account.
 
-PayPal provides the hands (its MCP server). Velloc provides the brain (the
-model, the background runtime, the confirmation gate, the dashboard).
+## Two ideas
 
-## Install
+### 1. The AI writes the UI (A2UI)
 
-1. Velloc on the **beta** channel (About → channel). Apps are a beta
-   feature, and the desk uses two of their newer hooks — a press on its icon
-   reaching the plugin (`app.press`) and the runtime reporting each server's
-   sign-in phase (`mcp.status`) — so it needs a beta build that has them.
-2. Link this folder as a plugin and restart Velloc:
-   - Windows: `mklink /J %USERPROFILE%\.velloc\plugins\paypal-desk D:\path\to\paypal-desk`
-   - macOS/Linux: `ln -s /path/to/paypal-desk ~/.velloc/plugins/paypal-desk`
-3. Settings → Plugins & Mods → turn **paypal-desk** on. Approve the inbox
-   folder when asked.
-4. Sign in to PayPal: the plugin's server is PayPal's sandbox MCP server,
-   which signs in through your browser (OAuth). Use a **sandbox business
-   account** from https://developer.paypal.com/dashboard/.
-5. Press the wallet icon in the top bar. The desk opens with its pane
-   maximized and fills in after the first sync.
-
-## Seed the sandbox
-
-A fresh sandbox account has nothing to show.
-
-The seeding scripts need a sandbox REST app's credentials. Copy
-`.env.example` to `.env` and fill in both, from developer.paypal.com >
-Apps & Credentials > Sandbox > your app. `.env` is gitignored, and every
-script below reads it, so no shell variables are needed.
-
-```bash
-npm run seed
-```
-
-The script creates four sent invoices (two overdue), a product and a
-monthly plan.
-
-The store's order history is a second script: 2,500 orders of a 33-product
-accessories store from Oct 1 to Nov 7, each recorded as a paid invoice on its
-own date, newest day first. The memo repeats the order for a person reading
-the invoice; a refund stays in the order book and the memo, and is not
-recorded on PayPal (see *Known PayPal issues*). It takes about an hour and can
-be stopped and run again; `--dry-run` prints the plan and calls nothing.
-
-```bash
-PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:orders
-PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:orders -- --from 2026-11-08 --to 2026-11-10
-```
-
-The dashboard's windows end yesterday, so before a demo add the days since
-the last run with `--from`/`--to`.
-
-From Nov 8 on, the store takes its orders as direct payments instead: each
-order is a PayPal Orders v2 order paid at once with PayPal's sandbox test
-card, so PayPal holds a real capture, and a refund in the order book is a real
-refund of it once its day has come. A payment is dated when it is made, so
-this script takes today's orders only; run it once a day. The REST app's
-sandbox account must accept card payments.
-
-```bash
-PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:payments -- --dry-run
-PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:payments -- --orders 1
-PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:payments
-PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:payments -- --check
-```
-
-### Test disputes
-
-One dispute for each case the dispute review decides differently: an
-order paid twice, a small and a large item-not-received, an item not as
-described, an unauthorized payment. Each is a store order paid with the
-sandbox test card, then a chargeback on its capture through the
-sandbox-only endpoint. `--dry-run` prints the orders and the expected
-verdicts; a second run skips what is done.
-
-```bash
-PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:disputes -- --dry-run
-PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:disputes
-```
-
-PayPal's sandbox chargeback endpoint answers 500 for a card capture. With
-`--wallet` each payment is made from the sandbox personal account instead:
-the first run prints an approval link per payment; approve each one signed
-in as the buyer, then run the same command again to capture the payments and
-open the chargebacks.
-
-```bash
-PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run seed:disputes -- --wallet
-```
-
-### Known PayPal issues
-
-**Refunded invoices empty the list.**
-
-PayPal's MCP server checks each answer against its own output schema before
-sending it, and `list_invoices`' schema lists no `MARKED_AS_REFUNDED` or
-`PARTIALLY_REFUNDED` status. A page holding one refunded invoice is refused
-whole (`-32602 Output validation error … received 'MARKED_AS_REFUNDED' at
-invoices[30].status`). The desk reads a refused page again in pages of 10, 5
-and 1 and skips only what is still refused, within 300 extra calls a sync;
-the sync note counts what it could not read. Sandbox data seeded before the
-seeder stopped recording refunds can be repaired: this deletes the recorded
-refunds of the store's invoices, which then read as paid; the board takes
-their refunds from the order book.
-
-```bash
-PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run undo-refunds -- --dry-run
-PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm run undo-refunds
-```
-
-**The list's rows carry no memo.** `list_invoices` on PayPal's MCP server
-answers flat rows (`invoice_id`, `invoice_number`, `status`, `amount` as a
-string, `due_date`, `created_date`) without the memo, items or bill-to that
-the REST API returns, and the server offers no tool that reads one invoice.
-So the store's order content cannot travel on PayPal; the desk reads it from
-the order book by the invoice number. For a dispute: send money from your sandbox personal account
-to the business account, copy the transaction id, and run
-`npm run seed -- --chargeback <id>`; the sandbox-only chargeback endpoint
-opens a dispute on it. Transaction Search shows new payments only after a
-few hours, so seed early.
-
-## Try it
-
-- Open the desk. *Overview* shows the week's sales; *Actions* lists the
-  overdue invoices and the dispute.
-- Each dispute's card on *Actions* shows the desk's lean at once and the
-  AI's verdict a minute or two later; *Details* shows the whole review.
-- Press *Ask AI* on an overdue invoice and send the drafted question. The
-  agent explains it, recommends, and calls a tool. The confirmation dialog
-  names the call; allow or refuse there.
-- Drop `inbox-example.csv` into `~/Documents/paypal-desk/inbox`. Within five
-  minutes a case appears; the agent drafts the invoice from it.
-- Ask "show me refunds as a bar chart by week" and watch the dashboard
-  change.
-
-## Layout
+The dashboard is not hand-coded React. It is an
+[A2UI](https://a2ui.org) document, `app/app.a2ui`: a declarative,
+agent-to-user interface the model can read, write and rebuild. Every card,
+chart and table binds to live data (an excerpt):
 
 ```
-.claude-plugin/plugin.json      the manifest: the app, its background module, the inbox folder
-.mcp.json                       PayPal's sandbox MCP server (OAuth, no stored secret)
-app-bg.js                       the background module
-lib/                            the catalog, the order book, the order memo, dates, the sales board, dispute review
-app/                            the seed: app.a2ui, AGENTS.md, data/state.json
-hooks/guard.js                  the confirmation gate on PayPal writes
-skills/paypal-rules/SKILL.md    operating rules and the tool map
-templates/board/template.md     the app's session: tools, MCP scoped to this plugin, skills
-scripts/seed-sandbox.mjs        sandbox seeding: invoices, a plan
-scripts/seed-orders.mjs         sandbox seeding: the store's order history
-scripts/undo-refunds.mjs        deletes recorded refunds on the store's invoices
-tests/                          node tests (npm test)
+week_daily = Card(Column([Heading("Daily sales", 3, "Net of refunds, per day"),
+  BarChart(data=$/data/week/daily, xKey="label", series=[{key: "value", label: "Net sales"}])]))
 ```
 
-## Tests
+So the person reshapes the app by asking. "Show refunds by week as a bar
+chart" or "give this product its own tab": the agent edits `app.a2ui`, calls
+`BuildApp`, and the new view is live in seconds, bound to the same data the
+module keeps fresh. The app grows with its user, without a release.
 
-```bash
-npm test
+### 2. The desk learns
+
+![The feedback loop: a problem shows up in PayPal, the AI analyzes it, it proposes a rule for the pattern, and the rule joins the desk, so next time the desk finds it first](docs/images/feedback-loop.png)
+
+Most AI tools answer and forget. Here, the AI's answer becomes a rule
+("alert me when a product's refund rate goes above 10%") that the desk
+checks on every sync. Next time it finds the problem first, already
+analyzed and waiting in *Actions*. Rules are data, never code: a condition,
+or a formula the desk evaluates itself.
+
+## Architecture
+
+```
+┌─ Velloc Code ───────────────────────────────────────────────────────────┐
+│  velloc-runtime · the mod app framework                                 │
+│  ┌──────────────────┐  ┌───────────────────┐  ┌──────────────────────┐  │
+│  │ background host  │  │ A2UI surface host │  │ agent                │  │
+│  │ one worker / app │  │ build app.a2ui    │  │ the app's session    │  │
+│  │ $.app $.mcp $.fs │  │ bind /data        │  │ headless runs        │  │
+│  │ publish patches  │  │ route events      │  │ BuildApp, skills     │  │
+│  └────────▲─────────┘  └─────────▲─────────┘  └──────────▲───────────┘  │
+├───────────┼──────────────────────┼───────────────────────┼──────────────┤
+│  Paypal-Desk-Mod · this repository                                      │
+│  app-bg.js · lib/           app/app.a2ui           AGENTS.md · skills   │
+│  the controller             the view (A2UI)        hooks/guard.js       │
+└───────────┬─────────────────────────────────────────────────────────────┘
+            │ OAuth · MCP
+            ▼
+   PayPal MCP server (sandbox): invoices · disputes · transactions · refunds
 ```
 
-Node 22 or later. The tests cover the manifest, the guard's decisions, the
-sales board, the order generator, the state derived from PayPal's reads, the
-invoice paging and cache, inbox copying and the module's lifecycle against a
-stand-in runtime.
+| Layer | Role |
+| --- | --- |
+| **Background module** (`app-bg.js`) | The controller. Resident while Velloc Code runs; reads PayPal every 5 minutes, computes the figures and the to-dos, and publishes state. No model needed to stay live. |
+| **A2UI view** (`app/app.a2ui`) | The view. The runtime diffs each state change into patches; only the bound components re-render. The agent can rewrite it. |
+| **Agent** (`AGENTS.md`, `paypal-rules`) | The second author of the view and the analyst. Reviews each dispute and each met alert in background runs; works cases with you in chat. |
+| **Guard** (`hooks/guard.js`) | Every PayPal write (refund, invoice, claim) asks you first, whatever the permission mode. |
+
+The framework ([velloc-runtime](https://github.com/VellocLabs/velloc-runtime),
+mainly `src/mods/app/`) turns a manifest into all of this: a topbar icon with
+a badge, its own folder and session, a resident worker, an A2UI surface and
+sandboxed agent runs. Velloc Code's beta ships it with PayPal Desk installed.
+
+**Trust:** PayPal's own OAuth, no stored secret · the module only reads ·
+tools scoped to this plugin · background runs read only the app's folder ·
+sandbox only.
+
+## The desk
+
+![The Actions tab: four disputes, each with the AI's verdict and its reason, then the alert rules and the dashed card that adds one](docs/images/actions.png)
+
+Each dispute carries the AI's verdict and the deciding fact; *Details* holds
+the reasons, the next steps and a reply draft. Below, the alert rules and the
+card that adds one.
+
+![The Trends tab: net sales, orders, order value, refund rate and sales by country over the last 4 weeks](docs/images/trends.png)
+
+## Get started
+
+<img src="docs/images/sign-in.png" alt="PayPal's own sandbox sign-in, opened from the desk's icon in the top bar" width="260" align="right">
+
+1. **Install the beta** of Velloc Code:
+   https://velloc.app/download/VellocSetup-beta.exe. On stable? **Settings →
+   About → Update Channel → Beta**, then restart.
+2. **Add a model** first: **Settings → Models**. Reviews, analysis and
+   *Ask AI* need one.
+3. **Find the PayPal icon** in the top bar. Not there? **Settings → Plugins &
+   Mods → PayPal Desk → Enabled**.
+4. **Sign in** with a **sandbox business account**
+   ([developer.paypal.com](https://developer.paypal.com/dashboard/) →
+   Testing Tools → Sandbox Accounts). The desk opens by itself once the
+   account is read.
+5. **Try it:** open a dispute's *Details*; ask "why did refunds jump?" and
+   accept the rule it offers; ask for a new chart and watch the app change.
+
+<br clear="right">
+
+## Develop
+
+A fresh sandbox has nothing to show. Copy `.env.example` to `.env` with a
+sandbox REST app's client id and secret, then:
+
+| Command | |
+| --- | --- |
+| `npm run seed` · `seed:orders` · `seed:payments` · `seed:disputes` | Invoices, 2,500 store orders, daily payments, one dispute per review case |
+| `npm run reset` | Clear what the desk learned, for a demo from nothing |
+| `npm test` | The tests (Node 22+) |
+
+```
+.claude-plugin/plugin.json   the manifest: app, background module, folder, agent runs
+app-bg.js · lib/             the controller: sales, alerts, formulas, dispute review
+app/app.a2ui                 the view, in A2UI
+app/AGENTS.md                the agent's brief
+hooks/ · skills/ · templates/  the write gate, merchant rules, the app's session
+```
 
 ## License
 

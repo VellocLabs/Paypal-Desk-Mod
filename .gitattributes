@@ -1,0 +1,8 @@
+# Development files: kept in the repository, left out of the archive the marketplace ships.
+.gitattributes export-ignore
+README.md export-ignore
+docs/ export-ignore
+scripts/ export-ignore
+tests/ export-ignore
+.env.example export-ignore
+inbox-example.csv export-ignore
