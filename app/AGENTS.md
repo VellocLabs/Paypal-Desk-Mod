@@ -85,6 +85,11 @@ Speak of them as orders and sales, not as invoices.
 - **Reshape the dashboard when asked.** Load the `a2ui` skill, edit
   `app.a2ui`, call `BuildApp`. Keep every binding under `$/data/...` as the
   module publishes it; see the field list below.
+- **Build a Products page.** Every product's week is already published under
+  `products`: bind `$/data/products/rows` in a `Grid` of cards (name, a badge
+  when `atRisk`, rate, units, sales, and `spark` as a line chart), and the
+  `kpis` as a row of `Metric`s. A product is at risk when one of the person's
+  own refund rules is met; without such a rule the desk uses 10% on 10 orders.
 - **Give a product its own tab.** When the person wants one product's own
   figures ("I just launched this, show me its last month"), write
   `data/watch.json` with the product's SKU from `lib/catalog.js` and the days
@@ -104,7 +109,7 @@ cards, the money at stake and the verdicts. Line one is the claim, the
 amount and the deadline, with your verdict as a badge after it (**Agree
 to refund**, **Contest it** or **Needs checking**). Line two is your
 review's `headline` on its own, so keep the headline to the deciding fact: at most 15
-words, and do not repeat the amount, the claim or the verdict. *Details*
+words, and do not repeat the amount, the claim or the verdict. Once reviewed, *Details*
 opens the whole review: the verdict with its confidence, why, the next
 steps, what the buyer says, the reply draft and what the desk checked.
 *Ask AI* opens the chat with the whole review attached as a quote and the
@@ -181,8 +186,9 @@ Rules come from two places:
   or a chargeback. Each open dispute is an event. It cannot be deleted:
   asked to, say so and offer to mark its events done.
 - *Yours*: what the person asked to watch, kept in `data/alerts.json`
-  (format under *Files you write*). With no such file the desk watches the
-  built-in "Refund rate jump" rule.
+  (format under *Files you write*). The desk starts with none: with no such
+  file the grid holds the disputes rule and the add card, and the heading's
+  note points at the add card.
 
 **How the tab looks.** The *Actions* tab shows the open events as cards,
 then done ones as the same cards with a ✅ and a *⋯* menu, then the *Alert rules* heading ("The desk
@@ -208,9 +214,8 @@ refund rate above 10%, sales down 20%). Use a plain rule when one says
 it; when it cannot (two weeks running, a longer window, a figure against
 its own average, two conditions together), write a formula rule. Asked for
 something neither can express (the data has no such figure), say what the
-desk can watch and offer the nearest rule. Writing
-the file replaces the built-in rule, so copy it into the file unless the
-person asked to drop it.
+desk can watch and offer the nearest rule. Keep the rules already in the
+file when adding one.
 
 **When it triggers.** The module checks every rule on each sync (every 5
 minutes), and within about 10 seconds of `data/alerts.json` or
@@ -247,8 +252,7 @@ Say the new rule back in one sentence.
 **Delete.** *Delete* writes `Delete the alert "<name>" (id: <id>).` into
 the chat box. The person sent it, so do it without asking again:
 
-- remove the entry from `data/alerts.json`; if the file is missing and it
-  is the built-in rule, write `{ "alerts": [] }`;
+- remove the entry from `data/alerts.json`;
 - remove the findings whose `alertId` is that id from
   `data/findings.json`, and the `alert:<id>` entries from
   `data/handled.json`;
@@ -419,16 +423,18 @@ missing.
 | `alerts` | Your rules as checked: `{id, name, rule, condition, headline, summary, subject, value, delta, trend, better, reading, week, status, tone, analysis, note, ask, editAsk, deleteAsk}`; `analysis` is `analyzed`, `analyzing`, `pending` or empty; `note` is the AI's conclusion or progress |
 | `paypalAlerts` | The dispute cards, open first, resolved ones for 30 days: `{id, title, rule, summary, subject, value, delta, status, tone, note, ask}`; `title` is the buyer's claim, `rule` the dispute id |
 | `findings` | `{id, title, when, source, conclusion, action}`, the newest five |
+| `products` | The Products tab's data: `{range, ruleNote, ask, rows, kpis}`; `rows` holds the 20 products that matter, at risk first, each `{sku, product, atRisk, badges, rate, rateNote, units, unitsNote, sales, salesNote, spark}` with `spark` eight weeks of `{label, rate}`; `kpis.{atRisk, refunds, salesAtRisk}` are cards |
 | `productTrend` | The tab a product was given: `{sku, name, from, to, days, note, ask, series, kpis}`; `series` is `{label, units, sales}` a day, `kpis.{units,sales,orders,refunds}` is `{label, value, trendValue?, trend?}`; absent until `data/watch.json` names a product |
-| `disputeCases`, `alertCases`, `otherCases` | `cases` split for the board: the dispute cards, then the to-dos of tripped alerts (shown with no badge), then the rest. A dispute case adds its review: `{reviewState, verdict, verdictLabel, verdictTone, verdictLine, againLabel, detailsTitle, detailsSubtitle, detailsLabel, detailsTone, detailsNote, detailsBody, discussQuote}`; `discussQuote` is the review in Markdown that *Ask AI* attaches; `reviewState` is `pending`, `reviewing` or `reviewed`; `detailsBody` is Markdown |
+| `disputeCases`, `alertCases`, `otherCases` | `cases` split for the board: the dispute cards, then the to-dos of tripped alerts (shown with no badge), then the rest. A dispute case adds its review: `{reviewState, verdict, verdictLabel, verdictTone, verdictLine, againLabel, detailsTitle, detailsSubtitle, detailsLabel, detailsTone, detailsNote, detailsBody, discussQuote}`; `discussQuote` is the review in Markdown that *Ask AI* attaches; `reviewState` is `pending`, `reviewing` or `reviewed`; `detailsBody` is Markdown. Dispute and alert cards carry `hasAI` and `detailsRows`: the card itself once the AI reviewed or analyzed it, else none, so *Details* shows only when there is an AI call to read |
 | `groups` | The headings over the groups of to-dos: `{disputesTitle, disputesNote, otherTitle}`; a title is empty when its heading is not shown (*Other to-dos*, over the alert to-dos and the rest, shows only under the disputes) |
 | `summary.casesNote`, `summary.alertsNote`, `summary.findingsNote` | The Actions tab's top line, and subtitles |
-| `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it) — the background module also puts the same count on the app's topbar icon with `$.app.badge` —, and the tab the board opens on: Actions (2) while any to-do is open, else Overview (0) |
+| `summary.todoCount`, `summary.openTab` | The Actions tab's count badge (0 hides it) — the background module also puts the same count on the app's topbar icon with `$.app.badge` —, and `openTab`, always 0: the board opens on Overview |
 | `doneCases` | Everything done in the last 7 days, latest first: the open card's fields plus `doneNote` ("Alert rule: Refund rate jump · Done Nov 9") |
 | `doneOpen`, `doneShown`, `doneHeadRows` | The *Done* section: whether it is unfolded, the cards it shows (none while folded), and its heading row (`{label: "Done (2) >"}`, `{label: "Done (2) <"}` unfolded), empty while nothing is done |
 | `cases` | The open to-dos, most urgent first: `{id, kind, title, source, detail, tone, label, since, ref, ask}`; `title` starts with a verb, `source` is where it came from ("From alert: …"); `kind` is `dispute`, `overdue_invoice`, `duplicate_payment`, `invoice_request` or `alert`; `ask` is what *Ask AI* drafts |
 | `sync` | `{at, ok, errors?, unavailable?, unread?, note}`; `unread` counts invoices PayPal's server refused to send |
 | `signedIn`, `loading`, `gateRows` | Whether PayPal answered, whether the first read is still running, and the sign-in card the board shows (`{title, text, button}`), empty once it is signed in |
+| `modelRows` | The card above the tabs while agent runs fail for the model (`{title, text}`): it says to open Settings → Models; empty once a run gets through |
 
 Both windows end yesterday (this machine's local day): today's orders appear in `week.latest`
 but in no total until tomorrow.

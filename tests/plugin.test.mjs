@@ -13,9 +13,10 @@ import {
   DONE_DAYS, doneTodos, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
   DETAILS_KEY, DISPUTES_FILE, LOADING, RETRY_MS, REVIEWS_FILE, REVIEWS_KEY, SIGN_IN, WATCH_FILE, actOf, answerPress, alertTodos, disputeDetails, doneSection, readWatch, ruleCards, startReview, refreshReviews, todoView, showBadge,
+  MODEL_HINT, MODEL_RETRY_MS, MODEL_TROUBLE, modelRows, noteRun, BUSY_RENEW_MS, notTried,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
-import { DEFAULT_RULES } from '../lib/alerts.js'
+const REFUND_JUMP = [{ id: 'refund-jump', name: 'Refund rate jump', metric: 'refund_rate', riseAbove: 1.5 }]
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const readJson = path => JSON.parse(readFileSync(join(root, path), 'utf8'))
@@ -127,7 +128,7 @@ const raw = {
 const openInvoices = normalizeInvoices(overdueRows.filter(r => r.status === 'SENT'), NOW)
 
 test('deriveState turns the reads into the sales board and cases, most urgent first', () => {
-  const state = deriveState({ raw, orders: storeOrders, alertRules: DEFAULT_RULES, openInvoices, inboxFiles: [{ name: 'march.csv', since: NOW }], handled: [], errors: {}, now: NOW })
+  const state = deriveState({ raw, orders: storeOrders, alertRules: REFUND_JUMP, openInvoices, inboxFiles: [{ name: 'march.csv', since: NOW }], handled: [], errors: {}, now: NOW })
   assert.equal(state.week.range, 'Nov 3 – Nov 9, 2026')
   assert.equal(state.week.kpis.net.value, '$140')
   assert.equal(state.week.kpis.orders.value, '2')
@@ -156,7 +157,8 @@ test('deriveState turns the reads into the sales board and cases, most urgent fi
   assert.equal(state.ruleCards[1].condition, "The store's refund rate rises more than 1.5 pts week over week.")
   assert.match(state.cases.at(-1).detail, /inbox\/march\.csv/)
   assert.equal(state.sync.ok, true)
-  assert.ok(JSON.stringify(state).length < 20_000)
+  // The products board alone is about 10 KB of the state; the whole of it travels with every action.
+  assert.ok(JSON.stringify(state).length < 32_000, JSON.stringify(state).length)
 })
 
 test('handled cases are dropped and read errors are reported in the sync note', () => {
@@ -456,7 +458,8 @@ test('app.start returns before the first sync ends and arms the timers; a change
   release()
   await whenIdle()
   assert.equal(world.state.value.week.kpis.net.value, '$200')
-  assert.deepEqual(world.state.value.alerts.map(a => a.id), ['refund-jump'], 'with no alert file, the built-in rule')
+  assert.deepEqual(world.state.value.alerts.map(a => a.id), [], 'with no alert file, no rule of its own: the person adds them')
+  assert.match(world.state.value.summary.alertsNote, /add your own with the \+ card/)
 
   const reads = () => world.calls.filter(c => c.tool === 'list_disputes').length
   const before = reads()
@@ -552,7 +555,7 @@ test('dismiss_finding changes the file and the board at once; other actions, del
 })
 
 test("a rule card's Edit and Delete draft a request naming the alert for the session agent", () => {
-  const state = deriveState({ raw, orders: storeOrders, alertRules: DEFAULT_RULES, now: NOW })
+  const state = deriveState({ raw, orders: storeOrders, alertRules: REFUND_JUMP, now: NOW })
   assert.equal(state.alerts[0].editAsk, 'Change the alert "Refund rate jump" (id: refund-jump, now Store: refund rate up more than 1.5 pts): ')
   assert.equal(state.alerts[0].deleteAsk, 'Delete the alert "Refund rate jump" (id: refund-jump).')
 })
@@ -615,7 +618,7 @@ test('after a run the board shows the new finding and the alert as analyzed', as
   assert.equal(world.state.value.cases[1].detail, 'AI: Charger batch', "the alert's to-do carries the finding, one line")
   assert.equal(world.state.value.cases[1].detailsConclusion, 'c', 'the argument stays in Details')
   assert.deepEqual(world.state.value.summary, {
-    disputesNote: 'x', casesNote: '2 open, most urgent first', todoCount: 2, openTab: 2, findingsNote: 'Newest first', alertsNote: 'The desk checks these every 5 minutes · 1 met now',
+    disputesNote: 'x', casesNote: '2 open, most urgent first', todoCount: 2, openTab: 0, findingsNote: 'Newest first', alertsNote: 'The desk checks these every 5 minutes · 1 met now',
   })
 })
 
@@ -646,7 +649,7 @@ test('a tripped alert is a to-do with the analysis in it; with no rule there is 
   assert.match(todo.ask, /^The alert "Refund rate watch" \(Store: refund rate up more than 1\.5 pts\) reads refund rate 30\.0%/)
   assert.match(state.cases[0].ask, /^Work this case \(dispute:PP-D-1\): Dispute PP-D-1/)
   assert.equal(state.cases.length, plain.cases.length + 1)
-  assert.deepEqual([state.summary.todoCount, state.summary.openTab], [state.cases.length, 2])
+  assert.deepEqual([state.summary.todoCount, state.summary.openTab], [state.cases.length, 0], 'the desk opens on Overview even with to-dos open')
   const none = deriveState({ raw: {}, now: NOW })
   assert.deepEqual([none.summary.todoCount, none.summary.openTab, none.summary.casesNote], [0, 0, 'Nothing needs you right now'])
 })
@@ -677,7 +680,7 @@ test('mark_done records the day in the handled file and drops the to-do from the
   assert.deepEqual(world.state.value.cases.map(c => c.id), ['a'])
   assert.deepEqual(world.state.value.needs.map(c => c.id), ['a'])
   assert.deepEqual(world.state.value.doneCases, [{ ...row('b'), source: '', icon: '', doneNote: 'Done Nov 10' }], 'the done card is the open card, as it was')
-  assert.deepEqual(world.state.value.summary, { alertsNote: 'n', casesNote: '1 open, most urgent first', todoCount: 1, openTab: 2 })
+  assert.deepEqual(world.state.value.summary, { alertsNote: 'n', casesNote: '1 open, most urgent first', todoCount: 1, openTab: 0 })
   assert.deepEqual(await handleAction(world.$, { action: 'mark_done', context: {} }), { handled: false })
 
   assert.deepEqual(await handleAction(world.$, { action: 'undo_done', context: { id: 'b' } }), { handled: true })
@@ -893,7 +896,7 @@ test('the dispute card binds only fields a dispute to-do has, and its buttons ac
   assert.match(board, /^disputeList = Column\(_template\(\$\/data\/disputeCases, disputeCard\)\)$/m)
   assert.match(board, /^disputeDetails = Modal\(disputeDetailsButton, disputeView\)$/m)
   const [card] = reviewCards([{ id: 'X', updated: '', daysLeft: 3, respondBy: day(3), stage: 'CLAIM', claim: 'c', amount: '$1.00', order: null, checks: [], lean: { verdict: 'refund', because: 'b' }, buyerSays: '' }], [], '')
-  const todo = { ...card, id: 'dispute:X', kind: 'dispute', title: 't', source: 's', detail: 'd', icon: '🔔', label: 'Dispute', tone: 'warning', ref: 'X', discussQuote: 'q' }
+  const todo = todoView([{ ...card, id: 'dispute:X', kind: 'dispute', title: 't', source: 's', detail: 'd', icon: '🔔', label: 'Dispute', tone: 'warning', ref: 'X', discussQuote: 'q' }]).disputeCases[0]
   const lines = board.split('\n').filter(line => /^dispute[A-Z]\w* = /.test(line))
   const fields = new Set(lines.flatMap(line => [...line.matchAll(/\$([a-zA-Z]\w*)/g)].map(m => m[1])))
   for (const field of fields) assert.ok(field in todo, `the card has no ${field}`)
@@ -920,7 +923,23 @@ test('alert to-dos have no badge and share the Other to-dos heading, shown under
   assert.ok(card.length && !card.some(l => l.includes('Badge($label')), 'an alert to-do has no status badge, only the act')
   assert.ok(card.some(l => l.includes('alertTodoAct = Badge($actLabel, $actTone)')), 'the act badge')
   assert.match(board, /^disputeTop = Row\(\[disputeIcon, disputeTitle, disputeVerdictBadge\], "start", "start"\)$/m)
-  assert.match(board, /^disputeButtons = Row\(\[disputeDetails, disputeAsk, disputeDone\]/m)
+  assert.match(board, /^disputeButtons = Row\(\[disputeDetailsSlot, disputeAsk, disputeDone\]/m)
+  assert.match(board, /^disputeDetailsSlot = Row\(_template\(\$detailsRows, disputeDetails\)/m)
+  assert.match(board, /^alertTodoDetailsSlot = Row\(_template\(\$detailsRows, alertTodoDetails\)/m)
+})
+
+test('a card shows Details only once the AI has written something for it', () => {
+  const view = todoView([
+    { id: 'dispute:X', kind: 'dispute', hasAI: false, detailsTitle: 'x' },
+    { id: 'dispute:Y', kind: 'dispute', hasAI: true, detailsTitle: 'y' },
+    { id: 'alert:a', kind: 'alert', hasAI: false },
+    { id: 'alert:b', kind: 'alert', hasAI: true, detailsHeadline: 'h' },
+  ])
+  assert.deepEqual(view.disputeCases.map(c => c.detailsRows.length), [0, 1])
+  assert.deepEqual(view.alertCases.map(c => c.detailsRows.length), [0, 1])
+  assert.equal(view.disputeCases[1].detailsRows[0].detailsTitle, 'y', 'the row carries the fields the details view binds')
+  assert.ok(!('detailsRows' in view.alertCases[1].detailsRows[0]), 'and no copy of itself')
+  assert.deepEqual(todoView(view.cases).alertCases.map(c => c.detailsRows.length), [0, 1], 'a second pass gives the same rows')
 })
 
 // ---- a product's own tab ---------------------------------------------------
@@ -1099,6 +1118,39 @@ test('the sign-in phase from mcp.status rebuilds the board when it flips either 
   await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
 })
 
+test('a sign-in whose first read finds PayPal still connecting opens the desk once a retry reads the board', async () => {
+  const handlers = {}
+  registerBackground((event, handler) => { handlers[event] = handler })
+  const world = fakeDollar({ answers: toolAnswers })
+  const views = []
+  world.$.app.view = {
+    open: async options => { views.push(['open', options]) },
+    close: async options => { views.push(['close', options]) },
+  }
+  const timers = []
+  world.$.clock.every = (ms, fn) => { const timer = { ms, fn, cancel() {} }; timers.push(timer); return timer }
+  world.$.fs.exists = async () => false
+  const connect = world.$.mcp.connect
+  world.$.mcp.connect = async () => ({ isConnected: false, message: 'sign-in required' })
+  await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'needs-sign-in' })
+  await handlers['app.start'](world.$, { appId: 'paypal-desk-board', folder: '/apps/x', folders: { read: [], write: [] }, locale: 'en' })
+  await whenIdle()
+  assert.deepEqual(await handlers['app.press'](world.$, { trigger: 'primary', client: 'window-1' }), { signIn: 'paypal' })
+  views.length = 0
+  const armed = timers.length
+
+  await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'signed-in' })
+  await whenIdle()
+  assert.deepEqual(views, [], 'nothing to show yet: PayPal is still connecting')
+  world.$.mcp.connect = connect
+  const retry = timers.slice(armed).find(t => t.ms === RETRY_MS)
+  assert.ok(retry, 'a retry is armed')
+  await retry.fn()
+  await whenIdle()
+  assert.deepEqual(views, [['open', { client: 'window-1' }]], 'the retry that reads the board opens it for the page that asked')
+  await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
+})
+
 test('the board names only components it defines: every bare word in a line is an id, a constructor or a binding', () => {
   const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
   const defined = new Set()
@@ -1207,4 +1259,147 @@ test('signing out closes the pane, and a press then signs in and opens it once t
   assert.deepEqual(views, [['open', { client: 'window-1' }]], 'and the module opens the desk for the page that asked')
   assert.deepEqual(busyCalls, [true, false], 'the icon showed it was working')
   await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
+})
+
+// ---- the model card --------------------------------------------------------
+
+test('a run that fails for the model shows where to fix it, and a run that gets through clears it', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  for (const reason of ['busy', 'limit', 'stopped', 'no answer', 'failed: the run did not finish within 10 minutes',
+    'failed: agent runs are not available in this realm', 'failed: no session has started in a Velloc Code window yet, so there is nothing to run on']) {
+    assert.equal(MODEL_TROUBLE.test(reason), false, `${reason} is not the model`)
+  }
+  for (const reason of ['failed: No model is selected', 'failed: 401 Unauthorized', 'failed: invalid x-api-key', 'failed: provider openai lists no models', 'failed: insufficient_quota']) {
+    assert.equal(MODEL_TROUBLE.test(reason), true, `${reason} is the model`)
+  }
+  assert.equal(await noteRun(world.$, { ok: false, reason: 'failed: 401 Unauthorized' }), true)
+  assert.deepEqual(world.state.value.modelRows, [{ title: MODEL_HINT.title, text: MODEL_HINT.text }])
+  assert.match(MODEL_HINT.text, /Settings → Models/)
+  assert.equal(await noteRun(world.$, { ok: false, reason: 'busy' }), false)
+  assert.equal(modelRows().length, 1, 'a failure of another kind leaves the card')
+  await noteRun(world.$, { ok: true, text: '' })
+  assert.deepEqual(world.state.value.modelRows, [], 'a run that got through clears it')
+})
+
+test('an analysis that failed for the model comes up again within the hour, not after six', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  world.$.app.analyze = async () => ({ ok: false, reason: 'failed: No model is selected' })
+  const started = await startAnalysis(world.$, [trippedRow('m', '2026-11-03..2026-11-09')], NOW, async () => {})
+  await started.run
+  const tried = await world.$.store.get(ANALYSES_KEY)
+  assert.equal(tried['m@2026-11-03..2026-11-09'], NOW - ANALYSIS_RETRY_MS + MODEL_RETRY_MS)
+  assert.equal(world.state.value.modelRows.length, 1)
+  assert.equal(await startAnalysis(world.$, [trippedRow('m', '2026-11-03..2026-11-09')], NOW + MODEL_RETRY_MS - 1, async () => {}), null, 'not before the hour')
+  world.$.app.analyze = async () => ({ ok: true, text: '' })
+  const again = await startAnalysis(world.$, [trippedRow('m', '2026-11-03..2026-11-09')], NOW + MODEL_RETRY_MS, async () => {})
+  assert.ok(again, 'and again once it has passed')
+  await again.run
+  assert.deepEqual(world.state.value.modelRows, [])
+})
+
+test('the board draws the model card above the tabs from modelRows', () => {
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  assert.match(board, /^root = Column\(\[gateSection, modelSection, boardTabs\]/m)
+  assert.match(board, /^modelSection = Column\(_template\(\$\/data\/modelRows, modelCard\)\)$/m)
+})
+
+// ---- first sign-in on a fresh machine --------------------------------------
+
+const twoDisputes = { items: [
+  { ...raw.disputes.items[0], dispute_id: 'PP-D-21', update_time: day(-1) },
+  { ...raw.disputes.items[0], dispute_id: 'PP-D-22', update_time: day(-1) },
+] }
+const settle = async () => { for (let i = 0; i < 20; i++) await new Promise(r => setTimeout(r, 0)) }
+
+test('a review that fails at once during the first sync leaves the to-do lists the sync published', async () => {
+  const world = fakeDollar({ answers: { ...toolAnswers, list_disputes: twoDisputes, get_dispute: args => ({ dispute_id: args.dispute_id }) } })
+  world.$.app.analyze = async () => ({ ok: false, reason: 'failed: no session has started in a Velloc Code window yet, so there is nothing to run on' })
+  // The host applies a publish a moment later, as a page message does.
+  const apply = world.$.app.publish
+  world.$.app.publish = async patches => { await new Promise(r => setTimeout(r, 5)); await apply(patches) }
+  await syncOnce(world.$, { inbox: null, now: NOW })
+  await settle()
+  const s = world.state.value
+  assert.ok(s.cases.length > 0)
+  assert.equal(s.summary.todoCount, s.cases.length)
+  assert.equal(s.disputeCases.length + s.alertCases.length + s.otherCases.length, s.cases.length, 'the lists match the count on the tab')
+  assert.deepEqual(world.store[REVIEWS_KEY] || {}, {}, 'a run that never started leaves no tried mark, so the next sync tries again')
+})
+
+test('a run that never got to work is not a try; a failed or finished one is', () => {
+  for (const reason of ['busy', 'limit', 'stopped', 'no answer', 'failed: no session has started in a Velloc Code window yet, so there is nothing to run on', 'failed: agent runs are not available in this realm']) {
+    assert.equal(notTried({ ok: false, reason }), true, reason)
+  }
+  assert.equal(notTried({ ok: false, reason: 'failed: the run did not finish within 10 minutes' }), false)
+  assert.equal(notTried({ ok: true, text: '' }), false)
+})
+
+test('the disputes are reviewed one after another, without waiting for the next sync', async () => {
+  const world = fakeDollar({ answers: { ...toolAnswers, list_disputes: twoDisputes, get_dispute: args => ({ dispute_id: args.dispute_id }) } })
+  const reviews = []
+  const asked = []
+  world.$.fs.exists = async p => p === REVIEWS_FILE
+  world.$.fs.read = async p => (p === REVIEWS_FILE ? JSON.stringify({ reviews }) : '')
+  world.$.app.analyze = async req => {
+    asked.push(req.title)
+    const id = req.title.replace('Review dispute ', '')
+    reviews.push({ disputeId: id, at: new Date(NOW + 60_000).toISOString(), verdict: 'refund', headline: 'h' })
+    return { ok: true, text: '' }
+  }
+  await syncOnce(world.$, { inbox: null, now: NOW })
+  await settle()
+  assert.deepEqual(asked.sort(), ['Review dispute PP-D-21', 'Review dispute PP-D-22'])
+  assert.deepEqual(world.state.value.disputeCases.map(c => c.reviewState), ['reviewed', 'reviewed'])
+})
+
+test('from the sign-in press to the open pane the icon stays at work, renewed past the host limit', async () => {
+  const handlers = {}
+  registerBackground((event, handler) => { handlers[event] = handler })
+  const world = fakeDollar({ answers: toolAnswers })
+  const views = []
+  const busyCalls = []
+  world.$.app.view = { open: async o => { views.push(o) }, close: async () => {} }
+  world.$.app.busy = async on => { busyCalls.push(on) }
+  const timers = []
+  world.$.clock.every = (ms, fn) => { const t = { ms, fn, cancelled: false, cancel() { this.cancelled = true } }; timers.push(t); return t }
+  world.$.fs.exists = async () => false
+  const connect = world.$.mcp.connect
+  world.$.mcp.connect = async () => ({ isConnected: false, message: 'sign-in required' })
+  await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'needs-sign-in' })
+  await handlers['app.start'](world.$, { appId: 'paypal-desk-board', folder: '/apps/x', folders: { read: [], write: [] }, locale: 'en' })
+  await whenIdle()
+  busyCalls.length = 0
+  await handlers['app.press'](world.$, { trigger: 'primary', client: 'w' })
+  assert.deepEqual(busyCalls, [true], 'at work from the press')
+  const renew = timers.find(t => t.ms === BUSY_RENEW_MS)
+  assert.ok(renew, 'and said again before the host drops it')
+  await renew.fn()
+  assert.deepEqual(busyCalls, [true, true])
+  await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'signing-in' })
+  world.$.mcp.connect = connect
+  await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'signed-in' })
+  await whenIdle()
+  assert.deepEqual(views, [{ client: 'w' }])
+  assert.equal(busyCalls.at(-1), false, 'done once the pane is open')
+  assert.equal(busyCalls.filter(b => b === false).length, 1)
+  assert.ok(renew.cancelled)
+  await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
+})
+
+test('a sync whose dispute read fails keeps the disputes it last read, and reads again soon', async () => {
+  let fail = false
+  const world = fakeDollar({ answers: { ...toolAnswers, list_disputes: () => (fail ? { __error: 'connection reset' } : twoDisputes), get_dispute: args => ({ dispute_id: args.dispute_id }) } })
+  world.$.app.analyze = async () => ({ ok: false, reason: 'busy' })
+  await syncOnce(world.$, { inbox: null, now: NOW, phase: 'signed-in' })
+  await settle()
+  const before = world.state.value.disputeCases.map(c => c.ref)
+  assert.deepEqual(before.sort(), ['PP-D-21', 'PP-D-22'])
+  fail = true
+  let retried = 0
+  await syncOnce(world.$, { inbox: null, now: NOW + 60_000, phase: 'signed-in', onRetry: async () => { retried += 1 } })
+  await settle()
+  assert.deepEqual(world.state.value.disputeCases.map(c => c.ref).sort(), before, 'the cards stay')
+  assert.equal(world.state.value.summary.todoCount, world.state.value.cases.length)
+  assert.equal(retried, 1, 'and the read is tried again soon')
+  assert.match(world.state.value.sync.note, /list_disputes/, 'the sync note still says the read failed')
 })

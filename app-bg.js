@@ -14,10 +14,11 @@
  * still a handful of patches.
  */
 import { addDays, dateOf, shortDate } from './lib/dates.js'
-import { DEFAULT_RULES, alertSeries, checkRules, disputeAlerts } from './lib/alerts.js'
+import { alertSeries, checkRules, disputeAlerts } from './lib/alerts.js'
 import { refundBreakdown } from './lib/insights.js'
 import { disputeFacts, disputesNote, flatDispute, latestReview, reviewCards, waitsOnMerchant } from './lib/disputes.js'
 import { isProduct, productTrend } from './lib/productTrend.js'
+import { productsBoard } from './lib/products.js'
 import { invoiceRowFields, paymentOrders, readStoreRow, salesBoard } from './lib/sales.js'
 
 export const POLL_MS = 5 * 60_000
@@ -66,8 +67,6 @@ export const ANALYSIS_RETRY_MS = 6 * 3_600_000
 const NEEDS_SHOWN = 3
 /** Days a to-do marked done stays hidden; it comes back after them if it is still true. */
 export const DONE_DAYS = 7
-/** The Actions tab's index in `app.a2ui`'s Tabs. */
-const TODO_TAB = 2
 /** How often the module looks for a changed alert or finding file between syncs. */
 export const RULES_WATCH_MS = 10_000
 /** The sign-in phases the runtime reports for a server. */
@@ -108,15 +107,29 @@ export function register(on) {
       running = true
       try {
         await syncOnce($, { inbox, now: await $.clock.now(), onRetry: scheduleRetry })
+        // Whichever sync first reads the board after a sign-in opens it for the page that asked.
+        if (boardLoaded && pendingClient !== null) {
+          const client = pendingClient
+          pendingClient = null
+          await view($, 'open', client)
+          await releaseBusy($)
+        }
       } catch (err) {
         await $.log.warn(`sync failed: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
         running = false
       }
     }
+    // A sync asked for while one runs waits for it and then runs once more, so the caller sees fresh data.
+    let queued = null
     const run = () => {
-      pending = tick()
-      return pending
+      if (!running) {
+        pending = tick()
+        return pending
+      }
+      if (!queued) queued = pending.then(() => { queued = null; return tick() })
+      pending = queued
+      return queued
     }
     // The first full invoice read can outlast app.start's budget, so it is not awaited.
     kick = run
@@ -130,6 +143,10 @@ export function register(on) {
   })
 
   on('app.stop', async () => {
+    if (busyHold) {
+      busyHold.cancel()
+      busyHold = null
+    }
     if (timer) timer.cancel()
     if (watch) watch.cancel()
     if (retry) retry.cancel()
@@ -149,21 +166,21 @@ export function register(on) {
     paypalPhase = next
     if (next === 'needs-sign-in') {
       boardLoaded = false
-      pendingClient = ''
-      await busy($, false)
+      pendingClient = null
+      lastDisputes = null
+      await releaseBusy($)
       await view($, 'close')
       // The pane is gone; the board behind it becomes the gate, for whoever opens it.
       if (kick) await kick()
       return
     }
     if (next === 'signed-in' && ((before && before !== next) || !boardLoaded)) {
-      await busy($, true)
+      await holdBusy($)
       try {
         if (kick) await kick()
-        if (boardLoaded && pendingClient) await view($, 'open', pendingClient)
       } finally {
-        pendingClient = ''
-        await busy($, false)
+        // A sign-in waiting for its pane stays at work until the sync that reads the board opens it.
+        if (pendingClient === null || !paypalPhase || paypalPhase === 'needs-sign-in') await releaseBusy($)
       }
     }
   })
@@ -172,16 +189,20 @@ export function register(on) {
   // is opened by the module once there is something to show.
   on('app.press', async ($, e) => {
     const answer = await answerPress(e)
-    if (answer.signIn) pendingClient = clientOf(e)
+    if (answer.signIn) {
+      // From the press to the open pane the icon shows the desk at work: the sign-in, then the first read.
+      pendingClient = clientOf(e)
+      await holdBusy($)
+    }
     if (answer.handled === true) {
       const client = clientOf(e)
       void (async () => {
-        await busy($, true)
+        await holdBusy($)
         try {
           if (kick) await kick()
           if (boardLoaded) await view($, 'open', client)
         } finally {
-          await busy($, false)
+          if (pendingClient === null) await releaseBusy($)
         }
       })()
     }
@@ -226,11 +247,10 @@ export async function handleAction($, e) {
   const list = Array.isArray(doc && doc[target.key]) ? doc[target.key] : []
   const kept = list.filter(item => !(item && item.id === id))
   if (kept.length !== list.length) await $.fs.write(target.file, `${JSON.stringify({ ...doc, [target.key]: kept }, null, 2)}\n`)
-  const state = (await $.app.state.get()) || {}
-  const shown = Array.isArray(state[target.key]) ? state[target.key] : []
-  if (shown.some(item => item.id === id)) {
-    await publishState($, state, { ...state, [target.key]: shown.filter(item => item.id !== id) })
-  }
+  await updateState($, state => {
+    const shown = Array.isArray(state[target.key]) ? state[target.key] : []
+    return shown.some(item => item.id === id) ? { ...state, [target.key]: shown.filter(item => item.id !== id) } : null
+  })
   return { handled: true }
 }
 
@@ -238,9 +258,10 @@ const TODO_ACTIONS = { mark_done: 'done', undo_done: 'open', delete_todo: 'delet
 
 /** Folds or unfolds the done section, keeping the list it shows in step. */
 async function toggleDone($) {
-  const state = (await $.app.state.get()) || {}
-  const done = Array.isArray(state.doneCases) ? state.doneCases : []
-  await publishState($, state, { ...state, ...doneSection(done, !state.doneOpen) })
+  await updateState($, state => {
+    const done = Array.isArray(state.doneCases) ? state.doneCases : []
+    return { ...state, ...doneSection(done, !state.doneOpen) }
+  })
   return { handled: true }
 }
 
@@ -253,11 +274,12 @@ async function changeTodo($, id, to) {
   const today = dateOf(await $.clock.now())
   const handled = normalizeHandled(await readJsonFile($, HANDLED_FILE))
   const before = handled.find(h => h.id === id)
-  const state = (await $.app.state.get()) || {}
+  let todo = null
+  await updateState($, async state => {
   const open = Array.isArray(state.cases) ? state.cases : []
   const shown = (Array.isArray(state.doneCases) ? state.doneCases : []).find(c => c.id === id)
   const { doneNote: _note, doneLabel: _label, ...shownCard } = shown || {}
-  const todo = open.find(c => c.id === id) || (before && before.todo) || (shown && shownCard.title ? shownCard : null)
+  todo = open.find(c => c.id === id) || (before && before.todo) || (shown && shownCard.title ? shownCard : null)
   const kept = handled.filter(h => h.id !== id && (!h.at || h.at >= addDays(today, -60)))
   const entry = to === 'open' ? null
     : { id, at: to === 'deleted' && before && before.at ? before.at : today, ...(to === 'deleted' ? { state: 'deleted' } : {}), ...(todo ? { todo } : {}) }
@@ -266,7 +288,8 @@ async function changeTodo($, id, to) {
   const others = open.filter(c => c.id !== id)
   const cases = to === 'open' && todo ? openTodos([...others, todo], [], today) : others
   const doneCases = doneTodos(next, cases, today)
-  await publishState($, state, { ...state, ...todoView(cases), ...doneSection(doneCases, state.doneOpen), summary: { ...(state.summary || {}), ...todoSummary(cases) } })
+  return { ...state, ...todoView(cases), ...doneSection(doneCases, state.doneOpen), summary: { ...(state.summary || {}), ...todoSummary(cases) } }
+  })
   // An alert's to-do is rebuilt from the alert itself; any other waits for the next sync.
   if (to === 'open' && !todo && id.startsWith('alert:')) await refreshFindings($)
   return { handled: true }
@@ -327,29 +350,28 @@ export async function syncOnce($, { inbox, now, onRetry, phase = paypalPhase }) 
   const connected = await $.mcp.connect(SERVER)
   if (!connected || connected.isConnected !== true) {
     const message = (connected && connected.message) || 'the PayPal server is not connected'
-    if (phase === 'signed-in' || phase === 'signing-in') {
-      // Signed in and PayPal did not answer yet: the connection is coming back, not gone.
-      // Blanking the board here is what made a sign-in look like a sign-out.
-      await publishState($, previous, {
-        ...previous,
+    // Signed in, or a board already read and no word of a sign-out: the connection is coming back, not gone.
+    if (phase === 'signed-in' || phase === 'signing-in' || (phase !== 'needs-sign-in' && previous.signedIn && previous.week)) {
+      await updateState($, state => ({
+        ...state,
         sync: { at: now, ok: false, error: message, note: 'Reconnecting to PayPal…' },
-      })
+      }))
       if (onRetry) await onRetry()
       return
     }
     boardLoaded = false
     await showBadge($, null)
-    await publishState($, previous, {
-      ...emptyState(previous),
+    await updateState($, state => ({
+      ...emptyState(state),
       ...signedOut(),
       sync: { at: now, ok: false, error: message, note: `Not connected to PayPal: ${message}` },
-    })
+    }))
     return
   }
 
   if (!previous.week) {
     // The first read takes a minute: say so, and keep a card up rather than an empty board.
-    await publishState($, previous, { ...emptyState(previous), ...reading() })
+    await updateState($, state => ({ ...emptyState(state), ...reading() }))
   }
   const errors = {}
   const unavailable = []
@@ -359,6 +381,11 @@ export async function syncOnce($, { inbox, now, onRetry, phase = paypalPhase }) 
     disputes: await read('list_disputes', { page_size: ROW_CAP }),
     transactions: await readTransactions(read, now),
   }
+  // A dispute list PayPal did not answer is not an empty one: keep the last one read, and read again soon.
+  const disputesFailed = Boolean(errors.list_disputes) || unavailable.includes('list_disputes')
+  if (disputesFailed && lastDisputes) raw.disputes = lastDisputes
+  else if (!disputesFailed) lastDisputes = raw.disputes
+  if (errors.list_disputes && onRetry) await onRetry()
   const payments = await storePayments($, raw.transactions, Boolean(errors.list_transactions))
   const inboxFiles = inbox ? await pullInbox($, inbox) : []
   const handled = await readHandled($)
@@ -366,7 +393,7 @@ export async function syncOnce($, { inbox, now, onRetry, phase = paypalPhase }) 
   await writeRefunds($, orders, dateOf(now))
   rulesSeen = await rulesText($)
   const alertsDoc = await readJsonFile($, ALERTS_FILE)
-  const alertRules = alertsDoc ? listOf(alertsDoc, 'alerts') : DEFAULT_RULES
+  const alertRules = alertsDoc ? listOf(alertsDoc, 'alerts') : []
   const findings = listOf(await readJsonFile($, FINDINGS_FILE), 'findings')
   const details = await disputeDetails($, raw.disputes, unavailable)
   const transactions = normalizeTransactions(raw.transactions)
@@ -384,8 +411,10 @@ export async function syncOnce($, { inbox, now, onRetry, phase = paypalPhase }) 
   } else if (await startAnalysis($, next.alerts, now, () => refreshFindings($))) {
     next = { ...next, alerts: next.alerts.map(a => alertWithStatus(a, findings, analyzing)) }
   }
-  await publishState($, previous, { ...next, ...signedIn() })
+  await updateState($, () => ({ ...next, ...signedIn(), modelRows: modelRows() }))
   boardLoaded = true
+  // A review that ended while this sync ran is drawn from its file, not from what the sync read.
+  if (facts.length) await refreshReviews($)
 }
 
 /** The facts of the last sync's open disputes, to rebuild the review cards when a review ends. */
@@ -395,9 +424,11 @@ let kick = null
 let paypalPhase = ''
 /** Whether the board in the published state has been read since the last sign-in. */
 let boardLoaded = false
-/** The page that pressed the icon while the board was not read yet, if any. */
-let pendingClient = ''
+/** The page that pressed the icon to sign in, waiting for the board to open: '' is every page, null is none. */
+let pendingClient = null
 let factsSeen = []
+/** The last dispute list PayPal answered, kept for a sync whose read of it failed; null after a sign-out. */
+let lastDisputes = null
 let disputesWritten = ''
 
 /** Rewrites the dispute facts file when its content changed. */
@@ -484,15 +515,75 @@ export async function startReview($, facts, reviews, now, onDone, { only = '' } 
     .then(async r => {
       reviewing = null
       if (!r.ok) await $.log.warn(`review of dispute ${due.id} ended without a result: ${r.reason}`)
+      if (await noteRun($, r)) await triedSoon($, REVIEWS_KEY, key(due), now)
+      else if (notTried(r)) await untried($, REVIEWS_KEY, key(due), tried[key(due)])
       const next = queued.shift()
-      if (next) {
+      // One review after another: the next waiting dispute starts as soon as one got through.
+      if (next || r.ok) {
         const fresh = listOf(await readJsonFile($, REVIEWS_FILE), 'reviews')
-        await startReview($, factsSeen, fresh, await $.clock.now(), onDone, { only: next })
+        await startReview($, next ? factsSeen : facts, fresh, await $.clock.now(), onDone, next ? { only: next } : {})
       }
       await onDone(r)
     })
     .catch(async err => { await $.log.warn(`after the review of ${due.id}: ${err instanceof Error ? err.message : String(err)}`) })
   return { run }
+}
+
+/** A failed run's reason that says the session's model cannot answer: none picked, no key, a refused key or a missing provider. */
+export const MODEL_TROUBLE = /\bmodel\b|api[ _-]?key|\bprovider\b|\b40[13]\b|unauthori[sz]ed|authenticat|credential|invalid[^.]*key|insufficient[_ ]quota|billing/i
+/** How soon a run that failed for the model is tried again, so a fixed model is used within the hour. */
+export const MODEL_RETRY_MS = 3_600_000
+/** The reason the last agent run failed for the model, or '' once a run got through. */
+let modelProblem = ''
+
+/** What the board shows while the model cannot answer: where to fix it, as a card above the tabs. */
+export const MODEL_HINT = {
+  title: "The AI can't run: no working model",
+  text: 'Dispute reviews and alert analysis need a model. Open Settings → Models, add a provider and its API key, and pick a model. The desk tries again within the hour, or press Review again.',
+}
+
+/** The model card's rows: one while the model cannot answer, none otherwise. */
+export function modelRows() {
+  return modelProblem ? [{ title: MODEL_HINT.title, text: MODEL_HINT.text }] : []
+}
+
+/**
+ * Records how an agent run ended: a failure for the model shows the model
+ * card, a run that got through clears it. Answers whether it failed for the model.
+ */
+export async function noteRun($, r) {
+  const trouble = Boolean(r && !r.ok && MODEL_TROUBLE.test(String(r.reason || '')))
+  const before = modelProblem
+  if (trouble) modelProblem = String(r.reason)
+  else if (r && r.ok) modelProblem = ''
+  if (Boolean(before) !== Boolean(modelProblem)) {
+    await updateState($, state => ({ ...state, modelRows: modelRows() }))
+  }
+  return trouble
+}
+
+/**
+ * A run that never got to work: refused while another ran or past the daily
+ * limit, stopped with the module, or started before any session window
+ * could host it. It is tried again at the next sync, not after ANALYSIS_RETRY_MS.
+ */
+export const NOT_TRIED = /^(busy|limit|stopped|no answer)$|no session has started|not available in this realm/i
+
+/** Whether a run ended without having been tried. */
+export function notTried(r) {
+  return Boolean(r && !r.ok && NOT_TRIED.test(String(r.reason || '')))
+}
+
+/** Puts a tried mark back as it was before this run: `before` undefined removes it. */
+async function untried($, storeKey, key, before) {
+  const { [key]: _mark, ...rest } = (await $.store.get(storeKey)) || {}
+  await $.store.set(storeKey, before === undefined ? rest : { ...rest, [key]: before })
+}
+
+/** Moves a tried mark back so the run comes up again MODEL_RETRY_MS after `at`, not ANALYSIS_RETRY_MS. */
+async function triedSoon($, storeKey, key, at) {
+  const tried = (await $.store.get(storeKey)) || {}
+  await $.store.set(storeKey, { ...tried, [key]: at - ANALYSIS_RETRY_MS + MODEL_RETRY_MS })
 }
 
 /** What the agent is asked when a dispute needs a review: its facts inline, so the run starts from them. */
@@ -519,10 +610,11 @@ async function reviewAgain($, id) {
 
 /** Republishes the dispute to-dos with their reviews, after a review started or ended. */
 export async function refreshReviews($) {
-  const state = (await $.app.state.get()) || {}
   const reviews = listOf(await readJsonFile($, REVIEWS_FILE), 'reviews')
-  const cases = (Array.isArray(state.cases) ? state.cases : []).map(c => withReview(c, factsSeen, reviews))
-  await publishState($, state, { ...state, ...todoView(cases) })
+  await updateState($, state => {
+    const cases = (Array.isArray(state.cases) ? state.cases : []).map(c => withReview(c, factsSeen, reviews))
+    return { ...state, cases, ...todoView(cases) }
+  })
 }
 
 /**
@@ -549,7 +641,10 @@ function withReview(c, facts, reviews) {
     discussQuote: [
       `**PayPal dispute ${f.id}**: ${[f.claim, f.amount, due].filter(Boolean).join(' · ')}`,
       `**${card.detailsLabel}** (${card.detailsNote})`,
-      card.detailsBody,
+      card.detailsHeadline,
+      ...[card.detailsWhy1, card.detailsWhy2, card.detailsWhy3, card.detailsWhy4].filter(Boolean),
+      ...[card.detailsStep1, card.detailsStep2, card.detailsStep3, card.detailsStep4].filter(Boolean),
+      card.detailsReply,
     ].join('\n\n'),
   }
 }
@@ -583,6 +678,8 @@ export async function startAnalysis($, alerts, now, onDone) {
     .then(async r => {
       analyzing = null
       if (!r.ok) await $.log.warn(`analysis of ${key} ended without a result: ${r.reason}`)
+      if (await noteRun($, r)) await triedSoon($, ANALYSES_KEY, key, now)
+      else if (notTried(r)) await untried($, ANALYSES_KEY, key, tried[key])
       await onDone(r)
     })
     .catch(async err => { await $.log.warn(`after the analysis of ${key}: ${err instanceof Error ? err.message : String(err)}`) })
@@ -601,15 +698,16 @@ export function analysisPrompt(a) {
 
 /** Republishes findings and alert statuses from the findings file, after an analysis ended. */
 export async function refreshFindings($) {
-  const state = (await $.app.state.get()) || {}
   const findings = listOf(await readJsonFile($, FINDINGS_FILE), 'findings')
-  const alerts = (Array.isArray(state.alerts) ? state.alerts : []).map(a => alertWithStatus(a, findings, analyzing))
-  const now = (state.sync && state.sync.at) || (await $.clock.now())
-  const others = (Array.isArray(state.cases) ? state.cases : []).filter(c => c.kind !== 'alert')
   const handled = await readHandled($)
+  const clock = await $.clock.now()
+  await updateState($, state => {
+  const alerts = (Array.isArray(state.alerts) ? state.alerts : []).map(a => alertWithStatus(a, findings, analyzing))
+  const now = (state.sync && state.sync.at) || clock
+  const others = (Array.isArray(state.cases) ? state.cases : []).filter(c => c.kind !== 'alert')
   const live = [...others, ...alertTodos(alerts, findings, now)]
   const cases = openTodos(live, handled, dateOf(now))
-  await publishState($, state, {
+  return {
     ...state,
     alerts,
     ...todoView(cases),
@@ -618,6 +716,7 @@ export async function refreshFindings($) {
     findings: viewFindings(findings),
     ruleCards: ruleCards(alerts, state.paypalAlerts),
     summary: { ...(state.summary || {}), ...todoSummary(cases), findingsNote: findingsNote(findings), alertsNote: alertsNote(alerts, state.paypalAlerts) },
+  }
   })
 }
 
@@ -653,6 +752,24 @@ async function storePayments($, transactions, failed) {
 }
 
 /** Publishes `next` as one patch per changed top-level key; `$.app.state.set` where there is no `publish`. */
+let stateLock = Promise.resolve()
+
+/**
+ * Reads the published state, lets `change` build the next one from it and
+ * publishes that, one change at a time, so a review or analysis ending in
+ * the middle of a sync cannot publish lists it read before the sync's.
+ * `change` answers null to publish nothing; it must not call updateState.
+ */
+export function updateState($, change) {
+  const run = stateLock.then(async () => {
+    const current = (await $.app.state.get()) || {}
+    const next = await change(current)
+    if (next) await publishState($, current, next)
+  })
+  stateLock = run.catch(() => {})
+  return run
+}
+
 export async function publishState($, previous, next) {
   if (typeof $.app.publish !== 'function') {
     await $.app.state.set(next)
@@ -964,6 +1081,7 @@ export function deriveState({ previous = {}, raw = {}, orders = [], alertRules =
     paypalAlerts,
     ruleCards: ruleCards(alerts, paypalAlerts),
     findings: viewFindings(findings),
+    products: productsBoard(orders, { today, alerts: alertRules }),
     summary: {
       alertsNote: alertsNote(alerts, paypalAlerts),
       findingsNote: findingsNote(findings),
@@ -993,8 +1111,8 @@ export function openTodos(cases, handled, today) {
 /** The to-do list and its first few. */
 /** The to-do list, split for the board: dispute cards (with their review) first, then the rest. */
 export function todoView(cases) {
-  const disputeCases = cases.filter(c => c.kind === 'dispute')
-  const alertCases = cases.filter(c => c.kind === 'alert')
+  const disputeCases = cases.filter(c => c.kind === 'dispute').map(withDetailsRows)
+  const alertCases = cases.filter(c => c.kind === 'alert').map(withDetailsRows)
   const otherCases = cases.filter(c => c.kind !== 'dispute' && c.kind !== 'alert')
   // Alert to-dos and the rest share one heading, shown under the disputes; the disputes heading always shows its totals.
   return {
@@ -1011,13 +1129,23 @@ export function todoView(cases) {
   }
 }
 
-/** The Actions tab's count badge and subtitle; `openTab` is the tab the board opens on (Actions while any to-do is open). */
+/**
+ * A card's `detailsRows`: the card itself once the AI has written something
+ * for it, else none, so the board draws its Details button only when there is
+ * an AI call to show.
+ */
+function withDetailsRows(c) {
+  const { detailsRows: _rows, ...card } = c
+  return { ...card, detailsRows: card.hasAI ? [card] : [] }
+}
+
+/** The Actions tab's count badge and subtitle; `openTab` is always Overview (0), for boards that still bind it. */
 function todoSummary(cases) {
   const n = cases.length
   return {
     casesNote: n === 0 ? 'Nothing needs you right now' : `${n} open, most urgent first`,
     todoCount: n,
-    openTab: n === 0 ? 0 : TODO_TAB,
+    openTab: 0,
   }
 }
 
@@ -1053,6 +1181,7 @@ export function alertTodos(alerts, findings, now, seriesOf = new Map()) {
       detailsChartNote: series ? series.note : '',
       detailsSeries: series ? series.series : [],
       detailsAsk: a.ask,
+      hasAI: Boolean(finding),
     }
   })
 }
@@ -1158,7 +1287,8 @@ export function alertWithStatus(row, findings, running) {
 /** The Alerts heading's subtitle: how many of the rules and PayPal's disputes need a look. */
 function alertsNote(alerts, paypalAlerts = []) {
   const met = ruleCards(alerts, paypalAlerts).filter(c => c.met).length
-  return `The desk checks these every 5 minutes · ${met === 0 ? 'none met now' : `${met} met now`}`
+  const own = alerts.length ? '' : ' · add your own with the + card'
+  return `The desk checks these every 5 minutes · ${met === 0 ? 'none met now' : `${met} met now`}${own}`
 }
 
 export const DISPUTE_RULE_ID = 'paypal-disputes'
@@ -1294,15 +1424,41 @@ export function signedOut() {
     signedIn: false,
     loading: false,
     gateRows: gate(SIGN_IN),
+    modelRows: [],
     cases: [], needs: [], doneCases: [], doneShown: [], doneHeadRows: [],
     disputeCases: [], alertCases: [], otherCases: [],
-    disputeReviews: [], findings: [], alerts: [], paypalAlerts: [], ruleCards: [],
+    disputeReviews: [], findings: [], alerts: [], paypalAlerts: [], ruleCards: [], products: undefined,
     summary: {}, week: undefined, trends: undefined, productTrend: undefined,
   }
 }
 
 /** The page that pressed the icon, or empty when the host named none. */
 const clientOf = e => (e && typeof e.client === 'string' ? e.client : '')
+
+/** How often a held busy mark is said again: the host drops one that is not renewed within two minutes. */
+export const BUSY_RENEW_MS = 60_000
+/** How long a held busy mark lasts at most, so a sign-in left unfinished does not keep the icon at work. */
+export const BUSY_HOLD_MS = 15 * 60_000
+let busyHold = null
+
+/** Shows the icon at work and keeps it so, renewed, until releaseBusy or BUSY_HOLD_MS. */
+async function holdBusy($) {
+  await busy($, true)
+  if (busyHold) return
+  const since = await $.clock.now()
+  busyHold = $.clock.every(BUSY_RENEW_MS, async () => {
+    if ((await $.clock.now()) - since >= BUSY_HOLD_MS) await releaseBusy($)
+    else await busy($, true)
+  })
+}
+
+/** Ends a held busy mark; a second release sends nothing. */
+async function releaseBusy($) {
+  if (!busyHold) return
+  busyHold.cancel()
+  busyHold = null
+  await busy($, false)
+}
 
 /** `$.app.busy(on)`: the icon shows the module at work. Absent on hosts without it. */
 async function busy($, on) {
