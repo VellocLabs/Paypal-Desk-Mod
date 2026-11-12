@@ -1092,3 +1092,33 @@ test('the sign-in phase from mcp.status rebuilds the board when it flips either 
   assert.equal(reads(), before + 2, 'signed in: the board comes back')
   await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
 })
+
+test('the board names only components it defines: every bare word in a line is an id, a constructor or a binding', () => {
+  const board = readFileSync(join(root, 'app/app.a2ui'), 'utf8')
+  const defined = new Set()
+  const parsed = []
+  for (const line of board.split('\n')) {
+    if (!line.trim() || line.trim().startsWith('//')) continue
+    if (line.startsWith('surface(')) continue
+    const m = /^(\w+) = (.+)$/.exec(line)
+    assert.ok(m, `not an assignment: ${line}`)
+    defined.add(m[1])
+    parsed.push([m[1], m[2]])
+  }
+  const CONSTRUCTORS = new Set(['Card', 'Column', 'Row', 'Text', 'Heading', 'Badge', 'Button', 'Metric', 'LineChart',
+    'DataTable', 'Icon', 'Menu', 'Modal', 'Grid', 'AddCard', 'Tabs', 'HoverBar', 'PieChart', 'BarChart', 'Divider',
+    'List', 'Image', 'TextField', 'Slider', 'CheckBox', 'ChoicePicker', 'DateTimeInput', 'Video', 'AudioPlayer',
+    '_template', 'Event', 'true', 'false', 'null'])
+  const NAME = new RegExp('^[A-Za-z0-9_/]*')
+  const NAMED = /([A-Za-z_]\w*)\s*[:=]/g
+  // A `$` starts a binding: drop the path after it, leaving the dollar, which is no word.
+  const strip = text => text.split('"').filter((part, i) => i % 2 === 0).join('')
+    .replace(NAMED, ' ')
+    .split('$').map((part, i) => (i === 0 ? part : part.replace(NAME, ''))).join('')
+  for (const [id, rhs] of parsed) {
+    for (const [, word] of strip(rhs).matchAll(/\b([A-Za-z_]\w*)\b/g)) {
+      if (CONSTRUCTORS.has(word)) continue
+      assert.ok(defined.has(word), `${id} names ${word}, which no line defines`)
+    }
+  }
+})
