@@ -1053,10 +1053,11 @@ test('opening the app asks the connection again at once, instead of waiting for 
 })
 
 test('a press on the icon signs in first when the server waits for it, and offers a menu on the context press', async () => {
-  assert.deepEqual(await answerPress({ trigger: 'primary' }, 'needs-sign-in'), { signIn: 'paypal', then: 'open' })
-  assert.deepEqual(await answerPress({ trigger: 'primary' }, 'signed-in'), { open: true })
-  assert.deepEqual(await answerPress({ trigger: 'primary' }, 'signing-in'), { open: true })
-  assert.deepEqual(await answerPress({ trigger: 'primary' }, ''), { open: true }, 'before any phase is known, the icon opens what it always did')
+  assert.deepEqual(await answerPress({ trigger: 'primary' }, 'needs-sign-in'), { signIn: 'paypal' }, 'the module opens the desk itself once it has read the account')
+  assert.deepEqual(await answerPress({ trigger: 'primary' }, 'signed-in', true), { open: true })
+  assert.deepEqual(await answerPress({ trigger: 'primary' }, 'signing-in', true), { open: true })
+  assert.deepEqual(await answerPress({ trigger: 'primary' }, '', true), { open: true }, 'before any phase is known, the icon opens what it always did')
+  assert.deepEqual(await answerPress({ trigger: 'primary' }, 'signed-in', false), { handled: true }, 'signed in but unread: the module loads before it shows anything')
 
   const signedIn = await answerPress({ trigger: 'context' }, 'signed-in')
   assert.deepEqual(signedIn.menu.map(i => i.id), ['open', 'refresh', 'sign-out'])
@@ -1085,12 +1086,16 @@ test('the sign-in phase from mcp.status rebuilds the board when it flips either 
   await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'signed-in' })
   await whenIdle()
   assert.equal(reads(), before, 'the first phase is the baseline, not a flip')
+  const connect = world.$.mcp.connect
+  world.$.mcp.connect = async () => ({ isConnected: false, message: 'sign-in required' })
   await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'needs-sign-in' })
   await whenIdle()
-  assert.equal(reads(), before + 1, 'signed out: the board is rebuilt into the gate')
+  assert.equal(reads(), before, 'signed out: nothing is read')
+  assert.deepEqual([world.state.value.signedIn, (world.state.value.gateRows || []).length], [false, 1], 'and the board behind it is the gate')
+  world.$.mcp.connect = connect
   await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'signed-in' })
   await whenIdle()
-  assert.equal(reads(), before + 2, 'signed in: the board comes back')
+  assert.equal(reads(), before + 1, 'signed in: the board is read again')
   await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
 })
 
@@ -1167,4 +1172,39 @@ test('a sync that finds the connection coming back asks for one retry, and app.s
   assert.ok(retries.length >= 1, 'a retry is armed')
   await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
   assert.ok(retries.every(t => t.cancelled), 'and dropped when the module stops')
+})
+
+test('signing out closes the pane, and a press then signs in and opens it once the board is read', async () => {
+  const handlers = {}
+  registerBackground((event, handler) => { handlers[event] = handler })
+  const world = fakeDollar({ answers: toolAnswers })
+  const views = []
+  const busyCalls = []
+  world.$.app.view = {
+    open: async options => { views.push(['open', options]) },
+    close: async options => { views.push(['close', options]) },
+  }
+  world.$.app.busy = async on => { busyCalls.push(on) }
+  world.$.clock.every = () => ({ cancel() {} })
+  world.$.fs.exists = async () => false
+  await handlers['app.start'](world.$, { appId: 'paypal-desk-board', folder: '/apps/x', folders: { read: [], write: [] }, locale: 'en' })
+  await whenIdle()
+
+  const connect = world.$.mcp.connect
+  world.$.mcp.connect = async () => ({ isConnected: false, message: 'sign-in required' })
+  await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'needs-sign-in' })
+  await whenIdle()
+  assert.deepEqual(views, [['close', undefined]], 'the pane goes with the account')
+
+  const answer = await handlers['app.press'](world.$, { trigger: 'primary', client: 'window-1' })
+  assert.deepEqual(answer, { signIn: 'paypal' }, 'signed out, the press only signs in')
+
+  views.length = 0
+  busyCalls.length = 0
+  world.$.mcp.connect = connect
+  await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'signed-in' })
+  await whenIdle()
+  assert.deepEqual(views, [['open', { client: 'window-1' }]], 'and the module opens the desk for the page that asked')
+  assert.deepEqual(busyCalls, [true, false], 'the icon showed it was working')
+  await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
 })

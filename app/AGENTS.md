@@ -42,11 +42,12 @@ Speak of them as orders and sales, not as invoices.
 - **Review a dispute.** See *Disputes* below: the module starts a review
   run for each open dispute that waits on the merchant; no chat is
   involved.
-- **When the desk is signed out.** The board is one card: *Sign in to PayPal*,
-  with a button that drafts the request into the chat. Every list is empty and
-  the icon carries no count, on purpose. Do not add a board for that state and
-  do not clear the gate; a press on the icon starts PayPal's own sign-in, and
-  the board comes back by itself when it finishes.
+- **When the desk is signed out.** Signing out closes the desk's pane, and the
+  board behind it is one card: *Sign in to PayPal*, with a button that drafts
+  the request into the chat. Every list is empty and the icon carries no count,
+  on purpose. Do not add a board for that state and do not clear the gate; a
+  press on the icon starts PayPal's own sign-in, and the desk opens by itself
+  once the account has been read.
 - **Mark a to-do done.** *Mark done* on the board moves a to-do into the
   *Done* section at the end of the actions, folded away until the person
   presses its title, for 7 days: the same card, "Done Nov 9" after its

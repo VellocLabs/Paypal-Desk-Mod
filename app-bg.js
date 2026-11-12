@@ -139,19 +139,54 @@ export function register(on) {
     kick = null
   })
 
-  // The runtime follows the sign-in service: a change to or from signed in means
-  // the board is stale either way, so it is rebuilt at once.
+  // The runtime follows the sign-in service. Signed out, the pane goes away with the
+  // account; signed in, the board is read and the pane opened for whoever asked.
   on('mcp.status', async ($, e) => {
     if (!e || e.server !== SERVER) return
     const next = String(e.phase || '')
     if (!PHASES.has(next)) return
     const before = paypalPhase
     paypalPhase = next
-    if (before && before !== next && (before === 'signed-in' || next === 'signed-in') && kick) await kick()
+    if (next === 'needs-sign-in') {
+      boardLoaded = false
+      pendingClient = ''
+      await busy($, false)
+      await view($, 'close')
+      // The pane is gone; the board behind it becomes the gate, for whoever opens it.
+      if (kick) await kick()
+      return
+    }
+    if (next === 'signed-in' && ((before && before !== next) || !boardLoaded)) {
+      await busy($, true)
+      try {
+        if (kick) await kick()
+        if (boardLoaded && pendingClient) await view($, 'open', pendingClient)
+      } finally {
+        pendingClient = ''
+        await busy($, false)
+      }
+    }
   })
 
-  // A press on the icon: signed out, it asks for the sign-in first, then opens the desk.
-  on('app.press', async ($, e) => answerPress(e))
+  // A press on the icon: signed out it signs in, unread it loads first, and the pane
+  // is opened by the module once there is something to show.
+  on('app.press', async ($, e) => {
+    const answer = await answerPress(e)
+    if (answer.signIn) pendingClient = clientOf(e)
+    if (answer.handled === true) {
+      const client = clientOf(e)
+      void (async () => {
+        await busy($, true)
+        try {
+          if (kick) await kick()
+          if (boardLoaded) await view($, 'open', client)
+        } finally {
+          await busy($, false)
+        }
+      })()
+    }
+    return answer
+  })
 
   // Opening the pane refreshes it: a fresh read, or the gate when PayPal does not answer.
   on('app.show', async () => {
@@ -302,6 +337,7 @@ export async function syncOnce($, { inbox, now, onRetry, phase = paypalPhase }) 
       if (onRetry) await onRetry()
       return
     }
+    boardLoaded = false
     await showBadge($, null)
     await publishState($, previous, {
       ...emptyState(previous),
@@ -349,6 +385,7 @@ export async function syncOnce($, { inbox, now, onRetry, phase = paypalPhase }) 
     next = { ...next, alerts: next.alerts.map(a => alertWithStatus(a, findings, analyzing)) }
   }
   await publishState($, previous, { ...next, ...signedIn() })
+  boardLoaded = true
 }
 
 /** The facts of the last sync's open disputes, to rebuild the review cards when a review ends. */
@@ -356,6 +393,10 @@ export async function syncOnce($, { inbox, now, onRetry, phase = paypalPhase }) 
 let kick = null
 /** The sign-in phase of the PayPal server, as the runtime last reported it. */
 let paypalPhase = ''
+/** Whether the board in the published state has been read since the last sign-in. */
+let boardLoaded = false
+/** The page that pressed the icon while the board was not read yet, if any. */
+let pendingClient = ''
 let factsSeen = []
 let disputesWritten = ''
 
@@ -1194,11 +1235,17 @@ export const LABELS = {
  * and on the context press a short menu, whose items come back as `menu`
  * presses. A sign-out is answered for a picked item alone.
  */
-export async function answerPress(e, phase = paypalPhase) {
+export async function answerPress(e, phase = paypalPhase, loaded = boardLoaded) {
   const trigger = e && e.trigger
   const signedIn = phase === 'signed-in'
   const due = phase === 'needs-sign-in'
-  if (trigger === 'primary') return due ? { signIn: SERVER, then: 'open' } : { open: true }
+  if (trigger === 'primary') {
+    // Signed out: sign in, and the module opens the desk itself once the data is there.
+    if (due) return { signIn: SERVER }
+    // Signed in but the board is not read yet: hold the screen, load, then open.
+    if (!loaded) return { handled: true }
+    return { open: true }
+  }
   if (trigger === 'context') {
     return {
       menu: signedIn
@@ -1251,6 +1298,30 @@ export function signedOut() {
     disputeCases: [], alertCases: [], otherCases: [],
     disputeReviews: [], findings: [], alerts: [], paypalAlerts: [], ruleCards: [],
     summary: {}, week: undefined, trends: undefined, productTrend: undefined,
+  }
+}
+
+/** The page that pressed the icon, or empty when the host named none. */
+const clientOf = e => (e && typeof e.client === 'string' ? e.client : '')
+
+/** `$.app.busy(on)`: the icon shows the module at work. Absent on hosts without it. */
+async function busy($, on) {
+  if (typeof $.app.busy !== 'function') return
+  try {
+    await $.app.busy(on)
+  } catch (err) {
+    await $.log.warn(`$.app.busy: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+/** `$.app.view.open/close`: the pages open the app or close its pane. Absent on hosts without it. */
+async function view($, want, client = '') {
+  const api = $.app.view
+  if (!api || typeof api[want] !== 'function') return
+  try {
+    await api[want](client ? { client } : undefined)
+  } catch (err) {
+    await $.log.warn(`$.app.view.${want}: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
 

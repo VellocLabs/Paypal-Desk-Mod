@@ -65,11 +65,13 @@ Built for the PayPal AI Hackathon 2026 against the PayPal **sandbox**.
   cannot say (no sales two weeks running, a week under its 4-week average)
   the AI writes a formula, which the desk reads itself (`lib/formula.js`);
   no alert runs code.
-- **Signing in** (`app.press`, `mcp.status`): a press on the desk's icon is
-  offered to the plugin first. Signed out, it starts PayPal's own sign-in and
-  opens the desk when it finishes; signed in, it opens. A context press offers
-  *Open the desk*, *Refresh now* and *Sign out of PayPal*. While PayPal does
-  not answer, the board is one sign-in card and the icon carries no count.
+- **Signing in** (`app.press`, `mcp.status`, `$.app.view`): a press on the
+  desk's icon is offered to the plugin first. Signed out, it starts PayPal's own
+  sign-in, the icon shows it is working, and the desk opens by itself once the
+  account has been read. Signed in, it opens. Signing out closes the pane with
+  the account. A context press offers *Open the desk*, *Refresh now* and *Sign
+  out of PayPal*. The board behind a closed pane is one sign-in card, and the
+  icon carries no count.
 - **A product's own tab** (`lib/productTrend.js`): ask for one product's
   figures and the agent writes `data/watch.json`; the module publishes
   `productTrend`, that product's last 7 to 90 days a day, and the agent adds
