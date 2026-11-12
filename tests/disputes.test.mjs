@@ -111,9 +111,9 @@ test('the card shows the desk lean while pending, a reviewing state, and the AI 
   assert.match(pending.detailsBody, /^\*\*The buyer was charged twice: refund the second charge\.\*\*\n\n\*\*What the desk checked\*\*\n- 5 days left to respond/)
   assert.deepEqual([pending.verdict, pending.detailsLabel, pending.detailsNote], ['', 'Agree to refund', 'From the desk rules; the AI has not reviewed it yet'])
   assert.deepEqual([pending.detailsConfidence, pending.detailsHeadline], ['', 'The buyer was charged twice: refund the second charge.'])
-  assert.match(pending.detailsSteps, /^The AI writes the steps here/)
+  assert.match(pending.detailsStep1, /^• The AI writes the steps here/)
   assert.match(pending.detailsReply, /^The reply draft appears once/)
-  assert.match(pending.detailsChecks, /^- 5 days left to respond/)
+  assert.match(pending.detailsCheck1, /^• 5 days left to respond/)
 
   const review = { disputeId: 'PP-D-1', at: day(0), verdict: 'refund', confidence: 'high', headline: 'The buyer was charged twice',
     reasons: ['TX-1 and TX-2: same buyer, same amount, 3 minutes apart'], steps: ['Refund TX-2'], reply: 'Sorry, we refunded the second charge.' }
@@ -126,9 +126,9 @@ test('the card shows the desk lean while pending, a reviewing state, and the AI 
   assert.deepEqual([done.verdict, done.detailsLabel, done.detailsTone], ['refund', 'Agree to refund', 'warning'])
   assert.equal(done.detailsNote, `AI review of ${day(0).slice(0, 16).replace('T', ' ')}`)
   assert.equal(done.detailsConfidence, 'High confidence')
-  assert.deepEqual([done.detailsHeadline, done.detailsWhy, done.detailsSteps, done.detailsReply],
-    ['The buyer was charged twice', '- TX-1 and TX-2: same buyer, same amount, 3 minutes apart', '- Refund TX-2', 'Sorry, we refunded the second charge.'])
-  assert.match(done.detailsChecks, /^- 5 days left to respond/)
+  assert.deepEqual([done.detailsHeadline, done.detailsWhy1, done.detailsStep1, done.detailsReply],
+    ['The buyer was charged twice', '• TX-1 and TX-2: same buyer, same amount, 3 minutes apart', '• Refund TX-2', 'Sorry, we refunded the second charge.'])
+  assert.match(done.detailsCheck1, /^• 5 days left to respond/)
   assert.ok(done.detailsBody.startsWith([
     '**The buyer was charged twice**',
     '**Why**\n- TX-1 and TX-2: same buyer, same amount, 3 minutes apart',
