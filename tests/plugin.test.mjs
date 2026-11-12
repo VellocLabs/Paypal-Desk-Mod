@@ -12,7 +12,7 @@ import { describeCall, isWriteTool, register as registerGuard } from '../hooks/g
 import {
   DONE_DAYS, doneTodos, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
-  CONNECT_WATCH_MS, DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, SIGN_IN, WATCH_FILE, actOf, alertTodos, disputeDetails, doneSection, readWatch, ruleCards, startReview, refreshReviews, todoView, showBadge,
+  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, SIGN_IN, WATCH_FILE, actOf, answerPress, alertTodos, disputeDetails, doneSection, readWatch, ruleCards, startReview, refreshReviews, todoView, showBadge,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
 import { DEFAULT_RULES } from '../lib/alerts.js'
@@ -451,7 +451,7 @@ test('app.start returns before the first sync ends and arms the timers; a change
   world.$.fs.read = async path => appFiles[path]
   await handlers['app.start'](world.$, { appId: 'paypal-desk-board', folder: '/apps/x', folders: { read: [], write: [] }, locale: 'en' })
   assert.equal(world.state.value.week, undefined, 'the sync is still reading')
-  assert.deepEqual([...timers.keys()], [5 * 60_000, CONNECT_WATCH_MS, RULES_WATCH_MS], 'the sync timer, the sign-in probe, the rule watch')
+  assert.deepEqual([...timers.keys()], [5 * 60_000, RULES_WATCH_MS], 'the sync timer and the rule watch: the sign-in phase comes as an event')
   release()
   await whenIdle()
   assert.equal(world.state.value.week.kpis.net.value, '$200')
@@ -468,7 +468,7 @@ test('app.start returns before the first sync ends and arms the timers; a change
   assert.deepEqual(world.state.value.alerts.map(a => [a.id, a.status]), [['floor', 'Triggered']])
 
   await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
-  assert.equal(cancelled, 3)
+  assert.equal(cancelled, 2)
 })
 
 test('a sync adds the store payments from Transaction Search, every page, and keeps the last good ones when the read fails', async () => {
@@ -1049,4 +1049,46 @@ test('opening the app asks the connection again at once, instead of waiting for 
   await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
   await handlers['app.show'](world.$, { appId: 'paypal-desk-board' })
   assert.equal(world.calls.filter(c => c.tool === 'list_disputes').length, calls + 1, 'nothing runs once the module is stopped')
+})
+
+test('a press on the icon signs in first when the server waits for it, and offers a menu on the context press', async () => {
+  assert.deepEqual(await answerPress({ trigger: 'primary' }, 'needs-sign-in'), { signIn: 'paypal', then: 'open' })
+  assert.deepEqual(await answerPress({ trigger: 'primary' }, 'signed-in'), { open: true })
+  assert.deepEqual(await answerPress({ trigger: 'primary' }, 'signing-in'), { open: true })
+  assert.deepEqual(await answerPress({ trigger: 'primary' }, ''), { open: true }, 'before any phase is known, the icon opens what it always did')
+
+  const signedIn = await answerPress({ trigger: 'context' }, 'signed-in')
+  assert.deepEqual(signedIn.menu.map(i => i.id), ['open', 'refresh', 'sign-out'])
+  const out = await answerPress({ trigger: 'context' }, 'needs-sign-in')
+  assert.deepEqual(out.menu.map(i => [i.id, i.disabled]), [['sign-in', false], ['open', undefined]])
+
+  assert.deepEqual(await answerPress({ trigger: 'menu', item: 'sign-out' }, 'signed-in'), { signOut: 'paypal' })
+  assert.deepEqual(await answerPress({ trigger: 'menu', item: 'sign-out' }, 'needs-sign-in'), { open: true }, 'a sign-out only from a signed-in menu')
+  assert.deepEqual(await answerPress({ trigger: 'menu', item: 'sign-in' }, 'needs-sign-in'), { signIn: 'paypal', then: 'open' })
+  assert.deepEqual(await answerPress({ trigger: 'menu', item: 'open' }, 'signed-in'), { open: true })
+  assert.deepEqual(await answerPress({ trigger: 'menu', item: 'nonsense' }, 'signed-in'), {}, 'no answer: the press does what it does without a module')
+})
+
+test('the sign-in phase from mcp.status rebuilds the board when it flips either way', async () => {
+  const handlers = {}
+  registerBackground((event, handler) => { handlers[event] = handler })
+  const world = fakeDollar({ answers: toolAnswers })
+  world.$.clock.every = () => ({ cancel() {} })
+  world.$.fs.exists = async () => false
+  await handlers['app.start'](world.$, { appId: 'paypal-desk-board', folder: '/apps/x', folders: { read: [], write: [] }, locale: 'en' })
+  await whenIdle()
+  const reads = () => world.calls.filter(c => c.tool === 'list_disputes').length
+  const before = reads()
+  await handlers['mcp.status'](world.$, { server: 'other', phase: 'signed-in' })
+  assert.equal(reads(), before, 'another server is not ours')
+  await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'signed-in' })
+  await whenIdle()
+  assert.equal(reads(), before, 'the first phase is the baseline, not a flip')
+  await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'needs-sign-in' })
+  await whenIdle()
+  assert.equal(reads(), before + 1, 'signed out: the board is rebuilt into the gate')
+  await handlers['mcp.status'](world.$, { server: 'paypal', phase: 'signed-in' })
+  await whenIdle()
+  assert.equal(reads(), before + 2, 'signed in: the board comes back')
+  await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
 })

@@ -70,12 +70,8 @@ export const DONE_DAYS = 7
 const TODO_TAB = 2
 /** How often the module looks for a changed alert or finding file between syncs. */
 export const RULES_WATCH_MS = 10_000
-/**
- * How often the module asks whether PayPal is still signed in. The host raises
- * no sign-in or sign-out event, so this is the only way to notice one; a flip
- * runs a sync at once, which publishes the gate or the board.
- */
-export const CONNECT_WATCH_MS = 30_000
+/** The sign-in phases the runtime reports for a server. */
+export const PHASES = new Set(['needs-sign-in', 'signing-in', 'signed-in'])
 const SEEN_KEY = 'inbox.seen'
 export const ORDERS_KEY = 'orders.cache'
 
@@ -89,7 +85,6 @@ export function whenIdle() {
 export function register(on) {
   let timer = null
   let watch = null
-  let probe = null
   let running = false
 
   on('app.start', async ($, e) => {
@@ -116,23 +111,6 @@ export function register(on) {
     kick = run
     run()
     timer = $.clock.every(POLL_MS, run)
-    // PayPal signing in or out is only visible by asking, so the module asks.
-    if (probe) probe.cancel()
-    probe = $.clock.every(CONNECT_WATCH_MS, async () => {
-      if (running) return
-      let connected = false
-      try {
-        const answer = await $.mcp.connect(SERVER)
-        connected = Boolean(answer && answer.isConnected)
-      } catch {
-        connected = false
-      }
-      if (connection === null) { connection = connected; return }
-      if (connected !== connection) {
-        connection = connected
-        await run()
-      }
-    })
     // A rule or finding the agent just wrote shows on the board within seconds, not at the next sync.
     if (watch) watch.cancel()
     watch = $.clock.every(RULES_WATCH_MS, async () => {
@@ -143,15 +121,26 @@ export function register(on) {
   on('app.stop', async () => {
     if (timer) timer.cancel()
     if (watch) watch.cancel()
-    if (probe) probe.cancel()
     timer = null
     watch = null
-    probe = null
-    connection = null
     kick = null
   })
 
-  // Opening the pane asks the question the probe asks on a timer: still signed in?
+  // The runtime follows the sign-in service: a change to or from signed in means
+  // the board is stale either way, so it is rebuilt at once.
+  on('mcp.status', async ($, e) => {
+    if (!e || e.server !== SERVER) return
+    const next = String(e.phase || '')
+    if (!PHASES.has(next)) return
+    const before = paypalPhase
+    paypalPhase = next
+    if (before && before !== next && (before === 'signed-in' || next === 'signed-in') && kick) await kick()
+  })
+
+  // A press on the icon: signed out, it asks for the sign-in first, then opens the desk.
+  on('app.press', async ($, e) => answerPress(e))
+
+  // Opening the pane refreshes it: a fresh read, or the gate when PayPal does not answer.
   on('app.show', async () => {
     if (kick) await kick()
   })
@@ -344,8 +333,8 @@ export async function syncOnce($, { inbox, now }) {
 /** The running app's sync entry, so `app.show` can ask for one; null while stopped. */
 let kick = null
 let loading = false
-/** The connection state the last probe saw; null until it has looked once. */
-let connection = null
+/** The sign-in phase of the PayPal server, as the runtime last reported it. */
+let paypalPhase = ''
 let factsSeen = []
 let disputesWritten = ''
 
@@ -1167,6 +1156,43 @@ export function viewFindings(findings) {
 }
 
 /** The board as it was, for a sync that could not reach PayPal: every tab keeps its last figures. */
+/**
+ * What a press on the desk's topbar icon asks for, as the host reads it: a
+ * sign-in first when the server is waiting for one, the app when it is not,
+ * and on the context press a short menu, whose items come back as `menu`
+ * presses. A sign-out is answered for a picked item alone.
+ */
+export async function answerPress(e, phase = paypalPhase) {
+  const trigger = e && e.trigger
+  const signedIn = phase === 'signed-in'
+  const due = phase === 'needs-sign-in'
+  if (trigger === 'primary') return due ? { signIn: SERVER, then: 'open' } : { open: true }
+  if (trigger === 'context') {
+    return {
+      menu: signedIn
+        ? [
+          { id: 'open', label: 'Open the desk' },
+          { id: 'refresh', label: 'Refresh now' },
+          { id: 'sign-out', label: 'Sign out of PayPal' },
+        ]
+        : [
+          { id: 'sign-in', label: 'Sign in to PayPal…', disabled: !due },
+          { id: 'open', label: 'Open the desk' },
+        ],
+    }
+  }
+  if (trigger === 'menu') {
+    if (e.item === 'open') return { open: true }
+    if (e.item === 'refresh') {
+      if (kick) await kick()
+      return { open: true }
+    }
+    if (e.item === 'sign-in') return due ? { signIn: SERVER, then: 'open' } : { open: true }
+    if (e.item === 'sign-out') return signedIn ? { signOut: SERVER } : { open: true }
+  }
+  return {}
+}
+
 /** What the board shows while PayPal is not connected: the way in, and nothing else. */
 export const SIGN_IN = {
   title: 'Sign in to PayPal',
