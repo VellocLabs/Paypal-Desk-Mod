@@ -1033,3 +1033,20 @@ test('a local action that throws stays local: it answers handled rather than fal
 function registerBackgroundEnv(into) {
   registerBackground((name, fn) => { into[name] = fn })
 }
+
+test('opening the app asks the connection again at once, instead of waiting for the probe', async () => {
+  const handlers = {}
+  registerBackground((event, handler) => { handlers[event] = handler })
+  const world = fakeDollar({ answers: toolAnswers })
+  world.$.clock.every = () => ({ cancel() {} })
+  world.$.fs.exists = async () => false
+  await handlers['app.start'](world.$, { appId: 'paypal-desk-board', folder: '/apps/x', folders: { read: [], write: [] }, locale: 'en' })
+  await whenIdle()
+  const calls = world.calls.filter(c => c.tool === 'list_disputes').length
+  await handlers['app.show'](world.$, { appId: 'paypal-desk-board' })
+  await whenIdle()
+  assert.equal(world.calls.filter(c => c.tool === 'list_disputes').length, calls + 1, 'one sync on open')
+  await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
+  await handlers['app.show'](world.$, { appId: 'paypal-desk-board' })
+  assert.equal(world.calls.filter(c => c.tool === 'list_disputes').length, calls + 1, 'nothing runs once the module is stopped')
+})

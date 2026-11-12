@@ -113,6 +113,7 @@ export function register(on) {
       return pending
     }
     // The first full invoice read can outlast app.start's budget, so it is not awaited.
+    kick = run
     run()
     timer = $.clock.every(POLL_MS, run)
     // PayPal signing in or out is only visible by asking, so the module asks.
@@ -147,6 +148,12 @@ export function register(on) {
     watch = null
     probe = null
     connection = null
+    kick = null
+  })
+
+  // Opening the pane asks the question the probe asks on a timer: still signed in?
+  on('app.show', async () => {
+    if (kick) await kick()
   })
 
   on('app.action', async ($, e) => {
@@ -334,6 +341,8 @@ export async function syncOnce($, { inbox, now }) {
 }
 
 /** The facts of the last sync's open disputes, to rebuild the review cards when a review ends. */
+/** The running app's sync entry, so `app.show` can ask for one; null while stopped. */
+let kick = null
 let loading = false
 /** The connection state the last probe saw; null until it has looked once. */
 let connection = null
