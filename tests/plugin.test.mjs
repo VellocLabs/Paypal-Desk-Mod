@@ -12,7 +12,7 @@ import { describeCall, isWriteTool, register as registerGuard } from '../hooks/g
 import {
   DONE_DAYS, doneTodos, FULL_SCAN_MS, RULES_WATCH_MS, KEEP_DAYS, isDone, MAX_PAGE_NUMBER, ALERTS_FILE, ANALYSES_KEY, ANALYSIS_RETRY_MS, FINDINGS_FILE, alertWithStatus, refreshFindings, startAnalysis, ORDERS_KEY, PAGE_SIZE, PAYMENTS_KEY, handleAction, deriveState, duplicatePayments, isRejectedOutput, isToolMissing,
   normalizeInvoices, publishState, readInvoiceRows, resultJson, syncOnce, whenIdle, register as registerBackground,
-  DETAILS_KEY, DISPUTES_FILE, REVIEWS_FILE, REVIEWS_KEY, SIGN_IN, WATCH_FILE, actOf, answerPress, alertTodos, disputeDetails, doneSection, readWatch, ruleCards, startReview, refreshReviews, todoView, showBadge,
+  DETAILS_KEY, DISPUTES_FILE, LOADING, RETRY_MS, REVIEWS_FILE, REVIEWS_KEY, SIGN_IN, WATCH_FILE, actOf, answerPress, alertTodos, disputeDetails, doneSection, readWatch, ruleCards, startReview, refreshReviews, todoView, showBadge,
 } from '../app-bg.js'
 import { storeOrder, storeRow, transactionRow } from './fixtures.mjs'
 import { DEFAULT_RULES } from '../lib/alerts.js'
@@ -269,13 +269,14 @@ test('the state is published one patch per changed top-level key, and old keys a
   const world = fakeDollar({ answers: toolAnswers })
   world.state.value = { plans: [{ id: 'P-1' }], series: { daily: [] }, summary: { sales: '$1' } }
   await syncOnce(world.$, { now: NOW })
-  const first = world.published[0]
+  const first = world.published.at(-1)
   assert.ok(first.every(p => /^\/[A-Za-z]+$/.test(p.path)), JSON.stringify(first.map(p => p.path)))
   assert.ok(first.some(p => p.path === '/plans' && !('value' in p)))
   assert.ok(first.some(p => p.path === '/week'))
   assert.equal(world.state.value.plans, undefined)
+  world.published.length = 0
   await syncOnce(world.$, { now: NOW })
-  assert.equal(world.published.length, 1, 'an unchanged state publishes nothing')
+  assert.equal(world.published.length, 0, 'an unchanged state publishes nothing')
 })
 
 test('the first sync reads every invoice page; later ones stop at a page with nothing new', async () => {
@@ -1121,4 +1122,49 @@ test('the board names only components it defines: every bare word in a line is a
       assert.ok(defined.has(word), `${id} names ${word}, which no line defines`)
     }
   }
+})
+
+test('a connect failure while the runtime says signed in keeps the board and asks for a retry', async () => {
+  const world = fakeDollar({ answers: toolAnswers, connected: false })
+  let retried = 0
+  world.state.value = { signedIn: true, week: { range: 'kept' }, cases: [{ id: 'kept' }], summary: { todoCount: 2 } }
+  await syncOnce(world.$, { now: NOW, phase: 'signed-in', onRetry: async () => { retried += 1 } })
+  assert.deepEqual([world.state.value.week, world.state.value.cases, world.state.value.signedIn], [{ range: 'kept' }, [{ id: 'kept' }], true], 'the board stays')
+  assert.match(world.state.value.sync.note, /Reconnecting to PayPal/)
+  assert.equal(retried, 1)
+})
+
+test('the first read shows a card, not an empty board', async () => {
+  const world = fakeDollar({ answers: toolAnswers })
+  world.$.fs.exists = async () => false
+  const snapshots = []
+  const publish = world.$.app.publish
+  world.$.app.publish = async patches => {
+    await publish(patches)
+    snapshots.push(JSON.parse(JSON.stringify(world.state.value)))
+  }
+  await syncOnce(world.$, { now: NOW, phase: 'signed-in' })
+  const reading = snapshots.find(s => (s.gateRows || []).length > 0)
+  assert.deepEqual(reading && reading.gateRows, [{ title: 'Reading your PayPal account', text: LOADING.text, button: '' }], 'a card while the read runs')
+  assert.deepEqual(world.state.value.gateRows, [], 'and no card once the board is there')
+  assert.equal(world.state.value.signedIn, true)
+  assert.equal(world.state.value.week.kpis.net.value, '$200')
+})
+
+test('a sync that finds the connection coming back asks for one retry, and app.stop cancels it', async () => {
+  const handlers = {}
+  registerBackground((event, handler) => { handlers[event] = handler })
+  const world = fakeDollar({ answers: toolAnswers, connected: false })
+  const timers = []
+  world.$.clock.every = (ms, fn) => { const timer = { ms, fn, cancelled: false, cancel() { this.cancelled = true } }; timers.push(timer); return timer }
+  world.$.fs.exists = async () => false
+  await handlers['app.start'](world.$, { appId: 'paypal-desk-board', folder: '/apps/x', folders: { read: [], write: [] }, locale: 'en' })
+  await whenIdle()
+  const phase = handlers['mcp.status']
+  await phase(world.$, { server: 'paypal', phase: 'signed-in' })
+  await whenIdle()
+  const retries = timers.filter(t => t.ms === RETRY_MS)
+  assert.ok(retries.length >= 1, 'a retry is armed')
+  await handlers['app.stop'](world.$, { appId: 'paypal-desk-board', reason: 'disabled' })
+  assert.ok(retries.every(t => t.cancelled), 'and dropped when the module stops')
 })

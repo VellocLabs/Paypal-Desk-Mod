@@ -72,6 +72,8 @@ const TODO_TAB = 2
 export const RULES_WATCH_MS = 10_000
 /** The sign-in phases the runtime reports for a server. */
 export const PHASES = new Set(['needs-sign-in', 'signing-in', 'signed-in'])
+/** How soon a sync that found the connection coming back is tried again. */
+export const RETRY_MS = 10_000
 const SEEN_KEY = 'inbox.seen'
 export const ORDERS_KEY = 'orders.cache'
 
@@ -85,6 +87,7 @@ export function whenIdle() {
 export function register(on) {
   let timer = null
   let watch = null
+  let retry = null
   let running = false
 
   on('app.start', async ($, e) => {
@@ -92,11 +95,19 @@ export function register(on) {
     // A stopped module's badge is cleared by the host, so a start sends the count again.
     badgeSent = undefined
     const inbox = e.folders && e.folders.read && e.folders.read[0]
+    // PayPal answered with a connection that was still coming back: try again soon, once.
+    const scheduleRetry = () => {
+      if (retry) return
+      retry = $.clock.every(RETRY_MS, async () => {
+        if (retry) { retry.cancel(); retry = null }
+        await run()
+      })
+    }
     const tick = async () => {
       if (running) return
       running = true
       try {
-        await syncOnce($, { inbox, now: await $.clock.now() })
+        await syncOnce($, { inbox, now: await $.clock.now(), onRetry: scheduleRetry })
       } catch (err) {
         await $.log.warn(`sync failed: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
@@ -121,8 +132,10 @@ export function register(on) {
   on('app.stop', async () => {
     if (timer) timer.cancel()
     if (watch) watch.cancel()
+    if (retry) retry.cancel()
     timer = null
     watch = null
+    retry = null
     kick = null
   })
 
@@ -274,13 +287,22 @@ async function writeRefunds($, orders, today) {
 }
 
 /** One sync: connect, read, derive, publish. Exported for tests with a fake `$`. */
-export async function syncOnce($, { inbox, now }) {
+export async function syncOnce($, { inbox, now, onRetry, phase = paypalPhase }) {
   const previous = (await $.app.state.get()) || {}
   const connected = await $.mcp.connect(SERVER)
   if (!connected || connected.isConnected !== true) {
     const message = (connected && connected.message) || 'the PayPal server is not connected'
+    if (phase === 'signed-in' || phase === 'signing-in') {
+      // Signed in and PayPal did not answer yet: the connection is coming back, not gone.
+      // Blanking the board here is what made a sign-in look like a sign-out.
+      await publishState($, previous, {
+        ...previous,
+        sync: { at: now, ok: false, error: message, note: 'Reconnecting to PayPal…' },
+      })
+      if (onRetry) await onRetry()
+      return
+    }
     await showBadge($, null)
-    loading = false
     await publishState($, previous, {
       ...emptyState(previous),
       ...signedOut(),
@@ -289,9 +311,9 @@ export async function syncOnce($, { inbox, now }) {
     return
   }
 
-  if (!loading) {
-    loading = true
-    await publishState($, previous, { ...emptyState(previous), ...signedIn(), loading: true })
+  if (!previous.week) {
+    // The first read takes a minute: say so, and keep a card up rather than an empty board.
+    await publishState($, previous, { ...emptyState(previous), ...reading() })
   }
   const errors = {}
   const unavailable = []
@@ -326,13 +348,12 @@ export async function syncOnce($, { inbox, now }) {
   } else if (await startAnalysis($, next.alerts, now, () => refreshFindings($))) {
     next = { ...next, alerts: next.alerts.map(a => alertWithStatus(a, findings, analyzing)) }
   }
-  await publishState($, previous, next)
+  await publishState($, previous, { ...next, ...signedIn() })
 }
 
 /** The facts of the last sync's open disputes, to rebuild the review cards when a review ends. */
 /** The running app's sync entry, so `app.show` can ask for one; null while stopped. */
 let kick = null
-let loading = false
 /** The sign-in phase of the PayPal server, as the runtime last reported it. */
 let paypalPhase = ''
 let factsSeen = []
@@ -1233,9 +1254,14 @@ export function signedOut() {
   }
 }
 
+/** While the first read runs: the gate's place, saying what is happening. */
+export function reading() {
+  return { signedIn: true, loading: true, gateRows: [{ title: LOADING.title, text: LOADING.text, button: '' }] }
+}
+
 /** The board once PayPal answered: no gate. */
 export function signedIn() {
-  return { signedIn: true, gateRows: [] }
+  return { signedIn: true, loading: false, gateRows: [] }
 }
 
 function emptyState(previous) {
